@@ -1,31 +1,53 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <link rel="icon" type="image/x-icon" href="/static/reportly_icon.png">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reportly</title>
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 </head>
 <body>
     <div class="container">
-        <h1>Reportly</h1>
-        <p class="subtitle">Turn your raw social media data into client-ready reports in seconds.</p>
+        <div class="header">
+            <h1>Reportly</h1>
+            <p class="subtitle">Turn raw social media data into strategic client reports — instantly.</p>
+        </div>
 
         <div class="input-section">
-            <label>Paste your social media data below:</label>
-            <textarea id="dataInput" placeholder="Paste your data here — CSV, numbers, platform exports, anything..."></textarea>
+            <label>Paste your social media data:</label>
+            <textarea id="dataInput" placeholder="Paste anything — CSV exports, numbers, platform data, messy notes..."></textarea>
             <button id="generateBtn" onclick="generateReport()">Generate Report</button>
         </div>
 
-        <div class="output-section" id="outputSection" style="display:none">
-            <h2>Your Report</h2>
-            <div id="reportOutput"></div>
-            <button onclick="copyReport()">Copy Report</button>
+        <div id="loading" style="display:none">
+            <div class="loader"></div>
+            <p>Analyzing your data...</p>
         </div>
 
-        <div id="loading" style="display:none">
-            <p>Analyzing your data...</p>
+        <div id="outputSection" style="display:none">
+
+            <div class="summary-card">
+                <div class="health-badge" id="healthBadge"></div>
+                <p id="overallSummary"></p>
+            </div>
+
+            <div class="insights-section">
+                <h2>Key Insights</h2>
+                <ul id="keyInsights"></ul>
+            </div>
+
+            <div class="posts-section">
+                <h2>Post Analysis</h2>
+                <div id="postsGrid"></div>
+            </div>
+
+            <div class="recommendations-section">
+                <h2>Strategic Recommendations</h2>
+                <ul id="recommendations"></ul>
+            </div>
+
+            <button onclick="copyReport()" class="copy-btn">Copy Full Report</button>
         </div>
     </div>
     <script src="/static/script.js"></script>
