@@ -23,7 +23,7 @@ def generate():
         return jsonify({"error": "No data provided"}), 400
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         messages=[
             {
                 "role": "system",
