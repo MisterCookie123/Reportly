@@ -147,6 +147,37 @@ Return ONLY a valid JSON object with no extra text, no markdown, no backticks.
     return jsonify({"report": report})
 
 
+def get_file_metadata():
+    from datetime import datetime
+
+    client_name = "Client"
+
+    summary = last_report.get('overall_summary', '')
+    executive = last_report.get('executive_summary', '')
+
+    import re
+    patterns = [
+        r"for ([A-Z][a-zA-Z\s]+(?:Agency|Studio|Brand|Media|Marketing|Co|Inc|Ltd)?)",
+        r"([A-Z][a-zA-Z\s]+(?:Agency|Studio|Brand|Media|Marketing))",
+    ]
+
+    for text in [summary, executive]:
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                found = match.group(1).strip()
+                if len(found) > 2 and len(found) < 40:
+                    client_name = found.replace(" ", "_")
+                    break
+        if client_name != "Client":
+            break
+
+    now = datetime.now()
+    month = now.strftime("%B")
+    year = now.strftime("%Y")
+
+    return client_name, month, year
+
 @app.route("/download/client")
 def download_client():
     if not last_report:
@@ -154,24 +185,26 @@ def download_client():
 
     from reportlab.pdfgen import canvas
     from reportlab.lib.pagesizes import A4
-    from reportlab.lib.units import cm, mm
+    from reportlab.lib.units import cm
+    from reportlab.lib.utils import simpleSplit
     import io
 
     buffer = io.BytesIO()
     page_width, page_height = A4
-
     c = canvas.Canvas(buffer, pagesize=A4)
 
-    MIDNIGHT = (18/255, 18/255, 18/255)
-    CARD_BG = (30/255, 30/255, 30/255)
-    CARD_LIGHT = (40/255, 40/255, 40/255)
+    BG = (10/255, 10/255, 10/255)
+    CARD_BG = (17/255, 17/255, 17/255)
+    CARD_BORDER = (34/255, 34/255, 34/255)
     WHITE = (1, 1, 1)
-    MUTED = (160/255, 160/255, 160/255)
+    MUTED = (136/255, 136/255, 136/255)
     CYAN = (0/255, 255/255, 255/255)
     PURPLE = (191/255, 0/255, 255/255)
     GREEN = (74/255, 222/255, 128/255)
     AMBER = (251/255, 146/255, 60/255)
     RED = (248/255, 113/255, 113/255)
+    BLUE = (59/255, 130/255, 246/255)
+    CARD_LIGHT = (40/255, 40/255, 40/255)
 
     def set_color(rgb):
         c.setFillColorRGB(*rgb)
@@ -179,93 +212,74 @@ def download_client():
     def set_stroke(rgb):
         c.setStrokeColorRGB(*rgb)
 
-    def draw_background():
-        set_color(MIDNIGHT)
+    def draw_bg():
+        set_color(BG)
         c.rect(0, 0, page_width, page_height, fill=1, stroke=0)
 
-    def draw_card(x, y, w, h, bg=CARD_BG, border=PURPLE, radius=8):
+    def draw_card(x, y, w, h, bg=CARD_BG, border=CARD_BORDER, radius=8):
         set_color(bg)
         c.roundRect(x, y, w, h, radius, fill=1, stroke=0)
         set_stroke(border)
         c.setLineWidth(0.5)
         c.roundRect(x, y, w, h, radius, fill=0, stroke=1)
 
-    def draw_section_line(y):
-        set_stroke(PURPLE)
+    def draw_line(y, color=PURPLE):
+        set_stroke(color)
         c.setLineWidth(0.5)
         c.line(2*cm, y, page_width - 2*cm, y)
 
-    def draw_progress_bar(x, y, w, h, percent, color=CYAN, bg=CARD_LIGHT):
-        set_color(bg)
+    def draw_progress_bar(x, y, w, h, percent, color=CYAN):
+        set_color(CARD_LIGHT)
         c.roundRect(x, y, w, h, 3, fill=1, stroke=0)
-        filled_w = max(w * min(percent / 100, 1), 0)
-        if filled_w > 0:
+        filled = max(w * min(percent / 100, 1), 0)
+        if filled > 0:
             set_color(color)
-            c.roundRect(x, y, filled_w, h, 3, fill=1, stroke=0)
+            c.roundRect(x, y, filled, h, 3, fill=1, stroke=0)
 
-    def draw_text(text, x, y, font="Helvetica", size=11, color=WHITE):
+    def text(t, x, y, font="Helvetica", size=11, color=WHITE):
         set_color(color)
         c.setFont(font, size)
-        c.drawString(x, y, str(text))
+        c.drawString(x, y, str(t))
 
-    def draw_centered_text(text, y, font="Helvetica", size=11, color=WHITE):
+    def centered(t, y, font="Helvetica", size=11, color=WHITE):
         set_color(color)
         c.setFont(font, size)
-        c.drawCentredString(page_width / 2, y, str(text))
+        c.drawCentredString(page_width / 2, y, str(t))
 
-    def new_page():
-        draw_background()
+    def multiline(t, x, y, font="Helvetica", size=10, color=WHITE, max_w=None):
+        if max_w is None:
+            max_w = page_width - 4*cm
+        set_color(color)
+        c.setFont(font, size)
+        lines = simpleSplit(str(t), font, size, max_w)
+        for line in lines:
+            c.drawString(x, y, line)
+            y -= size * 1.4
+        return y
 
-    draw_background()
+    def check_break(y, threshold=4*cm):
+        if y < threshold:
+            c.showPage()
+            draw_bg()
+            return page_height - 2.5*cm
+        return y
 
-    c.setFont("Helvetica-Bold", 9)
-    set_color(PURPLE)
-    c.drawString(2*cm, page_height - 1.2*cm, "REPORTLY")
-    set_color(MUTED)
-    c.setFont("Helvetica", 9)
-    c.drawRightString(page_width - 2*cm, page_height - 1.2*cm, "CONFIDENTIAL · CLIENT REPORT")
+    draw_bg()
 
-    draw_section_line(page_height - 1.5*cm)
-
-    draw_centered_text(
-        "MONTHLY PERFORMANCE REPORT",
-        page_height - 2.5*cm,
-        font="Helvetica-Bold",
-        size=18,
-        color=WHITE
-    )
-    draw_centered_text(
-        "Prepared exclusively for you",
-        page_height - 3.1*cm,
-        font="Helvetica",
-        size=10,
-        color=MUTED
-    )
+    draw_line(page_height - 1.5*cm, color=CARD_BORDER)
 
     score = last_report.get('brand_health_score', 0)
     health = last_report.get('business_health', 'N/A')
 
-    card_y = page_height - 7.5*cm
-    card_h = 4*cm
-    card_x = page_width / 2 - 5*cm
     card_w = 10*cm
+    card_h = 4.2*cm
+    card_x = page_width / 2 - card_w / 2
+    card_y = page_height - 6.8*cm
 
     draw_card(card_x, card_y, card_w, card_h, bg=CARD_BG, border=CYAN, radius=10)
 
-    draw_centered_text(
-        str(score),
-        card_y + card_h - 1.2*cm,
-        font="Helvetica-Bold",
-        size=42,
-        color=CYAN
-    )
-    draw_centered_text(
-        "BRAND HEALTH SCORE",
-        card_y + 1.2*cm,
-        font="Helvetica-Bold",
-        size=8,
-        color=MUTED
-    )
+    centered(str(score), card_y + card_h - 1.3*cm, font="Helvetica-Bold", size=48, color=CYAN)
+    centered("BRAND HEALTH SCORE", card_y + 1.3*cm, font="Helvetica-Bold", size=8, color=MUTED)
 
     if health == "Good":
         status_color = GREEN
@@ -274,216 +288,104 @@ def download_client():
     else:
         status_color = RED
 
-    draw_centered_text(
-        f"STATUS: {health.upper()}",
-        card_y + 0.5*cm,
-        font="Helvetica-Bold",
-        size=9,
-        color=status_color
-    )
+    centered(f"STATUS: {health.upper()}", card_y + 0.5*cm, font="Helvetica-Bold", size=9, color=status_color)
 
     current_y = card_y - 0.8*cm
-    draw_section_line(current_y)
+    draw_line(current_y, color=PURPLE)
+    current_y -= 0.7*cm
 
-    current_y -= 0.6*cm
-    draw_text(
-        "WHAT WE ACHIEVED THIS MONTH",
-        2*cm,
-        current_y,
-        font="Helvetica-Bold",
-        size=11,
-        color=CYAN
-    )
-
+    text("WHAT WE ACHIEVED THIS MONTH", 2*cm, current_y, font="Helvetica-Bold", size=12, color=CYAN)
     current_y -= 0.5*cm
+
     executive = last_report.get('executive_summary', '')
     if executive:
-        from reportlab.lib.utils import simpleSplit
-        words = simpleSplit(executive, "Helvetica", 10, page_width - 4*cm)
-        for line in words:
-            current_y -= 0.45*cm
-            draw_text(line, 2*cm, current_y, font="Helvetica", size=10, color=WHITE)
+        current_y = multiline(executive, 2*cm, current_y, font="Helvetica", size=10, color=WHITE)
 
-    current_y -= 0.8*cm
-    draw_section_line(current_y)
-    current_y -= 0.6*cm
+    current_y -= 0.5*cm
+    current_y = check_break(current_y)
 
     client_friendly = last_report.get('save_to_reach_client_friendly', '')
     if client_friendly:
-        draw_text(
-            "AUDIENCE INTEREST",
-            2*cm,
-            current_y,
-            font="Helvetica-Bold",
-            size=11,
-            color=CYAN
-        )
-        current_y -= 0.5*cm
+        interest_card_h = 1.6*cm
+        interest_card_y = current_y - interest_card_h
+        draw_card(2*cm, interest_card_y, page_width - 4*cm, interest_card_h, bg=CARD_BG, border=CYAN, radius=8)
+        text("AUDIENCE INTEREST", 2.4*cm, interest_card_y + interest_card_h - 0.55*cm, font="Helvetica-Bold", size=8, color=MUTED)
+        current_y_temp = multiline(client_friendly, 2.4*cm, interest_card_y + 0.9*cm, font="Helvetica-Bold", size=10, color=GREEN, max_w=page_width - 5*cm)
+        current_y = interest_card_y - 0.6*cm
 
-        interest_words = simpleSplit(client_friendly, "Helvetica-Bold", 10, page_width - 4*cm)
-        for line in interest_words:
-            current_y -= 0.45*cm
-            draw_text(line, 2*cm, current_y, font="Helvetica-Bold", size=10, color=GREEN)
-
-        current_y -= 0.8*cm
-        draw_section_line(current_y)
-        current_y -= 0.6*cm
+    current_y = check_break(current_y)
+    draw_line(current_y, color=PURPLE)
+    current_y -= 0.7*cm
 
     posts = last_report.get('posts', [])
     top_posts = sorted(posts, key=lambda x: x.get('impact_score', 0), reverse=True)[:3]
+    max_score = max((p.get('impact_score', 1) for p in top_posts), default=1) or 1
 
     if top_posts:
-        draw_text(
-            "TOP 3 WINS THIS MONTH",
-            2*cm,
-            current_y,
-            font="Helvetica-Bold",
-            size=11,
-            color=CYAN
-        )
+        text("TOP 3 WINS THIS MONTH", 2*cm, current_y, font="Helvetica-Bold", size=12, color=CYAN)
         current_y -= 0.5*cm
 
-        max_score = max(p.get('impact_score', 1) for p in top_posts) or 1
         win_labels = ["01", "02", "03"]
-
         for i, post in enumerate(top_posts):
-            if current_y < 4*cm:
-                c.showPage()
-                new_page()
-                current_y = page_height - 2*cm
-                draw_section_line(current_y)
-                current_y -= 0.6*cm
+            current_y = check_break(current_y, 3.5*cm)
 
-            win_card_h = 2.2*cm
-            win_card_y = current_y - win_card_h
-            draw_card(2*cm, win_card_y, page_width - 4*cm, win_card_h, bg=CARD_BG, border=PURPLE, radius=6)
+            win_h = 2.4*cm
+            win_y = current_y - win_h
+            draw_card(2*cm, win_y, page_width - 4*cm, win_h, bg=CARD_BG, border=CARD_BORDER, radius=8)
 
-            draw_text(
-                win_labels[i],
-                2.4*cm,
-                win_card_y + win_card_h - 0.6*cm,
-                font="Helvetica-Bold",
-                size=14,
-                color=PURPLE
-            )
+            text(win_labels[i], 2.4*cm, win_y + win_h - 0.65*cm, font="Helvetica-Bold", size=14, color=PURPLE)
 
-            title = post.get('post_title', '')[:55]
-            draw_text(
-                title,
-                3.4*cm,
-                win_card_y + win_card_h - 0.6*cm,
-                font="Helvetica-Bold",
-                size=10,
-                color=WHITE
-            )
+            title = post.get('post_title', '')[:52]
+            text(title, 3.5*cm, win_y + win_h - 0.65*cm, font="Helvetica-Bold", size=10, color=WHITE)
 
             rating = post.get('efficiency_rating', '')
             rating_color = GREEN if rating == "High-Value Content" else (RED if rating == "Low-Efficiency Growth" else AMBER)
-            draw_text(
-                rating.upper(),
-                3.4*cm,
-                win_card_y + 0.9*cm,
-                font="Helvetica-Bold",
-                size=8,
-                color=rating_color
-            )
+            text(rating.upper(), 3.5*cm, win_y + 1.0*cm, font="Helvetica-Bold", size=8, color=rating_color)
 
             score_val = post.get('impact_score', 0)
             bar_w = page_width - 4*cm - 1.5*cm - 2.5*cm
-            bar_x = 3.4*cm
-            bar_y = win_card_y + 0.4*cm
-            bar_percent = (score_val / max_score) * 100
-            draw_progress_bar(bar_x, bar_y, bar_w, 0.2*cm, bar_percent, color=CYAN)
+            draw_progress_bar(3.5*cm, win_y + 0.4*cm, bar_w, 0.22*cm, (score_val / max_score) * 100)
 
-            score_text = f"Score: {score_val}"
-            draw_text(
-                score_text,
-                page_width - 4*cm,
-                win_card_y + win_card_h - 0.6*cm,
-                font="Helvetica-Bold",
-                size=9,
-                color=CYAN
-            )
+            text(f"Score: {score_val}", page_width - 4.2*cm, win_y + win_h - 0.65*cm, font="Helvetica-Bold", size=9, color=CYAN)
 
-            current_y = win_card_y - 0.3*cm
+            current_y = win_y - 0.3*cm
 
-        current_y -= 0.5*cm
-
-    if current_y < 4*cm:
-        c.showPage()
-        new_page()
-        current_y = page_height - 2*cm
-
-    draw_section_line(current_y)
-    current_y -= 0.6*cm
+    current_y -= 0.3*cm
+    current_y = check_break(current_y)
+    draw_line(current_y, color=PURPLE)
+    current_y -= 0.7*cm
 
     key_insights = last_report.get('key_insights', [])
     if key_insights:
-        draw_text(
-            "KEY TAKEAWAYS",
-            2*cm,
-            current_y,
-            font="Helvetica-Bold",
-            size=11,
-            color=CYAN
-        )
+        text("KEY TAKEAWAYS", 2*cm, current_y, font="Helvetica-Bold", size=12, color=CYAN)
         current_y -= 0.5*cm
 
         for insight in key_insights:
-            if current_y < 4*cm:
-                c.showPage()
-                new_page()
-                current_y = page_height - 2*cm
-
-            insight_lines = simpleSplit(f"— {insight}", "Helvetica", 10, page_width - 4.5*cm)
-            for line in insight_lines:
-                current_y -= 0.45*cm
-                draw_text(line, 2.3*cm, current_y, font="Helvetica", size=10, color=WHITE)
+            current_y = check_break(current_y, 2*cm)
+            current_y = multiline(f"—  {insight}", 2.3*cm, current_y, font="Helvetica", size=10, color=WHITE, max_w=page_width - 4.5*cm)
             current_y -= 0.2*cm
 
-        current_y -= 0.4*cm
-
-    if current_y < 4*cm:
-        c.showPage()
-        new_page()
-        current_y = page_height - 2*cm
-
-    draw_section_line(current_y)
-    current_y -= 0.6*cm
+    current_y -= 0.3*cm
+    current_y = check_break(current_y)
+    draw_line(current_y, color=PURPLE)
+    current_y -= 0.7*cm
 
     next_month = last_report.get('next_month_vision', '')
     if next_month:
-        draw_text(
-            "WHAT WE'RE BUILDING TOWARD NEXT MONTH",
-            2*cm,
-            current_y,
-            font="Helvetica-Bold",
-            size=11,
-            color=CYAN
-        )
+        text("WHAT WE'RE BUILDING TOWARD NEXT MONTH", 2*cm, current_y, font="Helvetica-Bold", size=12, color=CYAN)
         current_y -= 0.5*cm
-
-        next_lines = simpleSplit(next_month, "Helvetica", 10, page_width - 4*cm)
-        for line in next_lines:
-            current_y -= 0.45*cm
-            draw_text(line, 2*cm, current_y, font="Helvetica", size=10, color=WHITE)
-
-    draw_section_line(1.8*cm)
-    set_color(MUTED)
-    c.setFont("Helvetica", 8)
-    c.drawCentredString(
-        page_width / 2,
-        1.2*cm,
-        "Generated by Reportly · Confidential · For Client Use Only"
-    )
+        multiline(next_month, 2*cm, current_y, font="Helvetica", size=10, color=WHITE)
 
     c.save()
     buffer.seek(0)
 
+    client_name, month, year = get_file_metadata()
+    filename = f"{client_name}_Performance_Report_{month}_{year}.pdf"
+
     return send_file(
         buffer,
         as_attachment=True,
-        download_name="client_report.pdf",
+        download_name=filename,
         mimetype="application/pdf"
     )
 
