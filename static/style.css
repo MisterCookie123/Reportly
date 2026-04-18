@@ -295,6 +295,30 @@ h2 {
     margin-top: 4px;
 }
 
+.header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.logout-btn {
+    background: transparent;
+    color: #666;
+    border: 1px solid #333;
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.logout-btn:hover {
+    color: #fff;
+    border-color: #666;
+    opacity: 1;
+}
+
 .client-btn:hover { opacity: 0.85; }
 .smm-btn:hover { opacity: 0.85; }
 

@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reportly — Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0a0a;
+      --surface:   #111111;
+      --border:    #222222;
+      --border-hi: #333333;
+      --cyan:      #00ffff;
+      --purple:    #bf00ff;
+      --green:     #4ade80;
+      --red:       #f87171;
+      --white:     #ffffff;
+      --muted:     #888888;
+      --input-bg:  #161616;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--white);
+      font-family: 'DM Mono', monospace;
+      overflow: hidden;
+    }
+
+    /* ── Animated grid background ── */
+    .grid-bg {
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,255,255,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Glow blobs */
+    .blob {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      pointer-events: none;
+      z-index: 0;
+      animation: drift 12s ease-in-out infinite alternate;
+    }
+    .blob-1 {
+      width: 500px; height: 500px;
+      background: rgba(191,0,255,0.08);
+      top: -100px; left: -100px;
+    }
+    .blob-2 {
+      width: 400px; height: 400px;
+      background: rgba(0,255,255,0.06);
+      bottom: -80px; right: -80px;
+      animation-delay: -6s;
+    }
+    @keyframes drift {
+      from { transform: translate(0, 0) scale(1); }
+      to   { transform: translate(40px, 30px) scale(1.1); }
+    }
+
+    /* ── Layout ── */
+    .page {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2.5rem;
+      animation: rise 0.5s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Brand ── */
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 2rem;
+    }
+    .brand-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 12px var(--cyan);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.6; transform: scale(0.8); }
+    }
+    .brand-name {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 1.1rem;
+      letter-spacing: 0.15em;
+      color: var(--white);
+    }
+
+    /* ── Headings ── */
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 1.6rem;
+      margin-bottom: 0.4rem;
+      line-height: 1.2;
+    }
+    .subtitle {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-bottom: 2rem;
+      letter-spacing: 0.02em;
+    }
+
+    /* ── Form ── */
+    .field {
+      margin-bottom: 1.1rem;
+    }
+    label {
+      display: block;
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 0.45rem;
+      text-transform: uppercase;
+    }
+    input {
+      width: 100%;
+      background: var(--input-bg);
+      border: 1px solid var(--border-hi);
+      border-radius: 8px;
+      color: var(--white);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.88rem;
+      padding: 0.75rem 1rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 3px rgba(0,255,255,0.08);
+    }
+    input::placeholder { color: #444; }
+
+    /* Password strength bar */
+    .strength-wrap {
+      margin-top: 0.5rem;
+      display: none;
+    }
+    .strength-wrap.visible { display: block; }
+    .strength-bar-bg {
+      height: 3px;
+      background: var(--border-hi);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .strength-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      width: 0%;
+      transition: width 0.3s, background 0.3s;
+    }
+    .strength-label {
+      font-size: 0.68rem;
+      margin-top: 0.3rem;
+      color: var(--muted);
+    }
+
+    /* ── Hint text ── */
+    .hint {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-top: 0.35rem;
+    }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      width: 100%;
+      margin-top: 0.5rem;
+      padding: 0.85rem;
+      background: var(--cyan);
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 0.9rem;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-primary:hover {
+      opacity: 0.9;
+      box-shadow: 0 0 24px rgba(0,255,255,0.3);
+      transform: translateY(-1px);
+    }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    /* Spinner inside button */
+    .btn-primary .spinner {
+      display: none;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(0,0,0,0.3);
+      border-top-color: #000;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin: 0 auto;
+    }
+    .btn-primary.loading .btn-text { display: none; }
+    .btn-primary.loading .spinner  { display: block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Alert ── */
+    .alert {
+      display: none;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      margin-bottom: 1.2rem;
+      border: 1px solid transparent;
+    }
+    .alert.error {
+      display: block;
+      background: rgba(248,113,113,0.08);
+      border-color: rgba(248,113,113,0.3);
+      color: var(--red);
+    }
+    .alert.success {
+      display: block;
+      background: rgba(74,222,128,0.08);
+      border-color: rgba(74,222,128,0.3);
+      color: var(--green);
+    }
+
+    /* ── Divider ── */
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      margin: 1.5rem 0;
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Switch link ── */
+    .switch {
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .switch a {
+      color: var(--cyan);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .switch a:hover { text-decoration: underline; }
+
+    /* ── Panel toggle (login / signup) ── */
+    .panel { display: none; }
+    .panel.active { display: block; }
+  </style>
+</head>
+<body>
+
+<div class="grid-bg"></div>
+<div class="blob blob-1"></div>
+<div class="blob blob-2"></div>
+
+<div class="page">
+  <div class="card">
+
+    <div class="brand">
+      <div class="brand-dot"></div>
+      <span class="brand-name">REPORTLY</span>
+    </div>
+
+    <!-- ── LOGIN PANEL ── -->
+    <div id="panel-login" class="panel active">
+      <h1>Welcome back</h1>
+      <p class="subtitle">Sign in to your account to continue</p>
+
+      <div id="login-alert" class="alert"></div>
+
+      <form id="login-form" autocomplete="on">
+        <div class="field">
+          <label for="login-email">Email</label>
+          <input id="login-email" type="email" placeholder="you@agency.com"
+                 autocomplete="email" required />
+        </div>
+        <div class="field">
+          <label for="login-password">Password</label>
+          <input id="login-password" type="password" placeholder="••••••••"
+                 autocomplete="current-password" required />
+        </div>
+
+        <button type="submit" class="btn-primary" id="login-btn">
+          <span class="btn-text">SIGN IN</span>
+          <div class="spinner"></div>
+        </button>
+      </form>
+
+      <div class="divider">or</div>
+      <p class="switch">No account? <a href="#" onclick="showPanel('signup')">Create one free</a></p>
+    </div>
+
+    <!-- ── SIGNUP PANEL ── -->
+    <div id="panel-signup" class="panel">
+      <h1>Create account</h1>
+      <p class="subtitle">Start generating reports in seconds</p>
+
+      <div id="signup-alert" class="alert"></div>
+
+      <form id="signup-form" autocomplete="on">
+        <div class="field">
+          <label for="signup-email">Email</label>
+          <input id="signup-email" type="email" placeholder="you@agency.com"
+                 autocomplete="email" required />
+        </div>
+        <div class="field">
+          <label for="signup-password">Password</label>
+          <input id="signup-password" type="password" placeholder="Min 8 chars, 1 uppercase, 1 number"
+                 autocomplete="new-password" required />
+          <div class="strength-wrap" id="strength-wrap">
+            <div class="strength-bar-bg">
+              <div class="strength-bar-fill" id="strength-bar"></div>
+            </div>
+            <div class="strength-label" id="strength-label"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="signup-confirm">Confirm password</label>
+          <input id="signup-confirm" type="password" placeholder="••••••••"
+                 autocomplete="new-password" required />
+        </div>
+
+        <button type="submit" class="btn-primary" id="signup-btn">
+          <span class="btn-text">CREATE ACCOUNT</span>
+          <div class="spinner"></div>
+        </button>
+      </form>
+
+      <div class="divider">or</div>
+      <p class="switch">Already have an account? <a href="#" onclick="showPanel('login')">Sign in</a></p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ── Panel switching ──────────────────────────────────────────────────────
+  function showPanel(name) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel-' + name).classList.add('active');
+    clearAlerts();
+  }
+
+  function clearAlerts() {
+    document.querySelectorAll('.alert').forEach(a => {
+      a.className = 'alert';
+      a.textContent = '';
+    });
+  }
+
+  function showAlert(id, type, msg) {
+    const el = document.getElementById(id);
+    el.className = 'alert ' + type;
+    el.textContent = msg;
+  }
+
+  function setLoading(btn, loading) {
+    btn.disabled = loading;
+    btn.classList.toggle('loading', loading);
+  }
+
+  // ── Password strength meter ──────────────────────────────────────────────
+  const pwInput   = document.getElementById('signup-password');
+  const strengthW = document.getElementById('strength-wrap');
+  const strengthB = document.getElementById('strength-bar');
+  const strengthL = document.getElementById('strength-label');
+
+  pwInput.addEventListener('input', () => {
+    const val = pwInput.value;
+    if (!val) { strengthW.classList.remove('visible'); return; }
+    strengthW.classList.add('visible');
+
+    let score = 0;
+    if (val.length >= 8)                  score++;
+    if (/[A-Z]/.test(val))               score++;
+    if (/[0-9]/.test(val))               score++;
+    if (/[^A-Za-z0-9]/.test(val))        score++;
+    if (val.length >= 14)                score++;
+
+    const levels = [
+      { pct: 20,  color: '#f87171', label: 'Too weak' },
+      { pct: 40,  color: '#fb923c', label: 'Weak' },
+      { pct: 60,  color: '#facc15', label: 'Fair' },
+      { pct: 80,  color: '#4ade80', label: 'Strong' },
+      { pct: 100, color: '#00ffff', label: 'Very strong' },
+    ];
+    const lvl = levels[Math.min(score, 4)];
+    strengthB.style.width      = lvl.pct + '%';
+    strengthB.style.background = lvl.color;
+    strengthL.textContent      = lvl.label;
+    strengthL.style.color      = lvl.color;
+  });
+
+  // ── Login ────────────────────────────────────────────────────────────────
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn   = document.getElementById('login-btn');
+    const email = document.getElementById('login-email').value.trim();
+    const pw    = document.getElementById('login-password').value;
+
+    clearAlerts();
+    setLoading(btn, true);
+
+    try {
+      const res  = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: pw })
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        showAlert('login-alert', 'success', 'Signed in! Redirecting…');
+        setTimeout(() => window.location.href = '/', 800);
+      } else {
+        showAlert('login-alert', 'error', data.error || 'Login failed.');
+        setLoading(btn, false);
+      }
+    } catch {
+      showAlert('login-alert', 'error', 'Network error. Please try again.');
+      setLoading(btn, false);
+    }
+  });
+
+  // ── Signup ───────────────────────────────────────────────────────────────
+  document.getElementById('signup-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn     = document.getElementById('signup-btn');
+    const email   = document.getElementById('signup-email').value.trim();
+    const pw      = document.getElementById('signup-password').value;
+    const confirm = document.getElementById('signup-confirm').value;
+
+    clearAlerts();
+
+    if (pw !== confirm) {
+      showAlert('signup-alert', 'error', 'Passwords do not match.');
+      return;
+    }
+
+    setLoading(btn, true);
+
+    try {
+      const res  = await fetch('/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: pw })
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        showAlert('signup-alert', 'success', 'Account created! Signing you in…');
+        setTimeout(() => window.location.href = '/', 1000);
+      } else {
+        showAlert('signup-alert', 'error', data.error || 'Signup failed.');
+        setLoading(btn, false);
+      }
+    } catch {
+      showAlert('signup-alert', 'error', 'Network error. Please try again.');
+      setLoading(btn, false);
+    }
+  });
+</script>
+</body>
+</html>

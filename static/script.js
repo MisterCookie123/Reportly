@@ -132,3 +132,8 @@ async function fetchInstagram() {
         document.getElementById("loading").style.display = "none";
     }
 }
+
+async function logout() {
+    await fetch('/auth/logout', { method: 'POST' });
+    window.location.href = '/login';
+}
