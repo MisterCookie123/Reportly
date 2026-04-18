@@ -229,4 +229,36 @@ h2 {
     font-weight: 500;
 }
 
+.button-group {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+}
+
+.client-btn {
+    background: #4ade80;
+    color: #000;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.smm-btn {
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.client-btn:hover { opacity: 0.85; }
+.smm-btn:hover { opacity: 0.85; }
+
 .copy-btn:hover { color: #fff; border-color: #666; opacity: 1; }

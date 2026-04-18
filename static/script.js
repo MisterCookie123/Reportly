@@ -84,3 +84,7 @@ function copyReport() {
     navigator.clipboard.writeText(full);
     alert("Report copied to clipboard.");
 }
+
+function downloadPDF(type) {
+    window.location.href = '/download/' + type;
+}
