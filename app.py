@@ -82,9 +82,16 @@ STEP 5 — OVERALL ANALYSIS
 - next_month_vision: one high level goal for next month
 - key_insights: exactly 3 insights based on actual numbers
 - overall_recommendations: exactly 3 recommendations based on patterns
-- kill_list: the 2 worst performing posts with specific reason why they failed
+- kill_list: the 2 worst performing posts with specific reason why they failed 
+  AND a specific replacement suggestion
+  Example: "Kill the quote post — replace with a behind the scenes photo showing 
+  your process"
 - format_velocity: which content format is performing best right now and by how much
-- save_to_reach_ratio: overall save-to-reach ratio as a percentage with interpretation
+- save_to_reach_ratio: calculate the ratio as a percentage
+- save_to_reach_interpretation: explain this metric in two ways:
+  1. technical: "X% Save-to-Reach Ratio"
+  2. client_friendly: translate into plain business language like 
+  "High Customer Interest" or "Low Purchase Intent" with one sentence explanation
 - battle_plan: exactly 4 bullet points of what to change in the next 30 days
 - brand_health_score: a single number 0-100 representing overall brand health
 
@@ -112,11 +119,12 @@ Return ONLY a valid JSON object with no extra text, no markdown, no backticks.
   "kill_list": [
     {
       "post_title": "string",
-      "reason": "string"
+      "reason": "string",
+      "replacement": "string"
     }
   ],
-  "format_velocity": "string",
   "save_to_reach_ratio": "string",
+  "save_to_reach_client_friendly": "string",
   "battle_plan": ["string", "string", "string", "string"]
 }"""
             },
@@ -153,99 +161,151 @@ def download_client():
         bottomMargin=2*cm
     )
 
-    styles = getSampleStyleSheet()
     elements = []
 
     title_style = ParagraphStyle(
         'Title',
-        fontSize=28,
+        fontSize=32,
         fontName='Helvetica-Bold',
         textColor=colors.HexColor('#000000'),
-        spaceAfter=4,
+        spaceAfter=6,
         alignment=TA_CENTER
     )
-    subtitle_style = ParagraphStyle(
-        'Subtitle',
+    tagline_style = ParagraphStyle(
+        'Tagline',
         fontSize=12,
         fontName='Helvetica',
-        textColor=colors.HexColor('#666666'),
-        spaceAfter=20,
+        textColor=colors.HexColor('#888888'),
+        spaceAfter=4,
         alignment=TA_CENTER
     )
     section_style = ParagraphStyle(
         'Section',
-        fontSize=14,
+        fontSize=15,
         fontName='Helvetica-Bold',
         textColor=colors.HexColor('#000000'),
-        spaceBefore=16,
-        spaceAfter=8
+        spaceBefore=20,
+        spaceAfter=10
     )
     body_style = ParagraphStyle(
         'Body',
         fontSize=11,
         fontName='Helvetica',
-        textColor=colors.HexColor('#333333'),
+        textColor=colors.HexColor('#444444'),
         spaceAfter=6,
-        leading=16
+        leading=18
     )
     score_style = ParagraphStyle(
         'Score',
-        fontSize=64,
+        fontSize=80,
         fontName='Helvetica-Bold',
         textColor=colors.HexColor('#000000'),
         alignment=TA_CENTER,
-        spaceAfter=4
+        spaceAfter=0
     )
     score_label_style = ParagraphStyle(
         'ScoreLabel',
-        fontSize=12,
+        fontSize=13,
         fontName='Helvetica',
-        textColor=colors.HexColor('#666666'),
+        textColor=colors.HexColor('#888888'),
+        alignment=TA_CENTER,
+        spaceAfter=6
+    )
+    health_style = ParagraphStyle(
+        'Health',
+        fontSize=13,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor('#16a34a'),
         alignment=TA_CENTER,
         spaceAfter=24
     )
+    win_title_style = ParagraphStyle(
+        'WinTitle',
+        fontSize=12,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor('#000000'),
+        spaceAfter=3
+    )
+    win_body_style = ParagraphStyle(
+        'WinBody',
+        fontSize=11,
+        fontName='Helvetica',
+        textColor=colors.HexColor('#555555'),
+        spaceAfter=12,
+        leading=16
+    )
+    interest_style = ParagraphStyle(
+        'Interest',
+        fontSize=13,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor('#2563eb'),
+        spaceAfter=4,
+        alignment=TA_CENTER
+    )
+    footer_style = ParagraphStyle(
+        'Footer',
+        fontSize=9,
+        fontName='Helvetica',
+        textColor=colors.HexColor('#bbbbbb'),
+        alignment=TA_CENTER
+    )
 
-    elements.append(Spacer(1, 1*cm))
-    elements.append(Paragraph("Reportly", title_style))
-    elements.append(Paragraph("Monthly Performance Report", subtitle_style))
-    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#eeeeee')))
-    elements.append(Spacer(1, 0.5*cm))
+    elements.append(Spacer(1, 1.5*cm))
+    elements.append(Paragraph("Monthly Performance Report", title_style))
+    elements.append(Paragraph("Prepared exclusively for you", tagline_style))
+    elements.append(Spacer(1, 0.3*cm))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#eeeeee')))
+    elements.append(Spacer(1, 0.8*cm))
 
     score = last_report.get('brand_health_score', 0)
+    health = last_report.get('business_health', '')
     elements.append(Paragraph(str(score), score_style))
     elements.append(Paragraph("Brand Health Score", score_label_style))
+    elements.append(Paragraph(f"Status: {health}", health_style))
 
-    elements.append(Paragraph("Executive Summary", section_style))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#eeeeee')))
+    elements.append(Spacer(1, 0.5*cm))
+
+    elements.append(Paragraph("What We Achieved This Month", section_style))
     elements.append(Paragraph(last_report.get('executive_summary', ''), body_style))
+    elements.append(Spacer(1, 0.3*cm))
+
+    elements.append(Paragraph("Your Audience Is Paying Attention", section_style))
+    elements.append(Paragraph(
+        last_report.get('save_to_reach_client_friendly', ''),
+        interest_style
+    ))
     elements.append(Spacer(1, 0.3*cm))
 
     elements.append(Paragraph("Top 3 Wins This Month", section_style))
     posts = last_report.get('posts', [])
     top_posts = sorted(posts, key=lambda x: x.get('impact_score', 0), reverse=True)[:3]
-    for i, post in enumerate(top_posts, 1):
+    win_labels = ["First Win", "Second Win", "Third Win"]
+    for i, post in enumerate(top_posts):
         elements.append(Paragraph(
-            f"<b>{i}. {post['post_title']}</b> — Impact Score: {post['impact_score']}",
-            body_style
+            f"{win_labels[i]}: {post['post_title']}",
+            win_title_style
         ))
         elements.append(Paragraph(
-            f"Rating: {post['efficiency_rating']}",
-            body_style
+            f"This content delivered strong business value with an impact score of "
+            f"{post['impact_score']} — rated {post['efficiency_rating']}.",
+            win_body_style
         ))
 
-    elements.append(Spacer(1, 0.3*cm))
-    elements.append(Paragraph("Next Month's Vision", section_style))
+    elements.append(Paragraph("Key Takeaways", section_style))
+    for insight in last_report.get('key_insights', []):
+        elements.append(Paragraph(f"— {insight}", body_style))
+
+    elements.append(Spacer(1, 0.4*cm))
+    elements.append(Paragraph("What We're Building Toward Next Month", section_style))
     elements.append(Paragraph(last_report.get('next_month_vision', ''), body_style))
 
+    elements.append(Spacer(1, 1.5*cm))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#eeeeee')))
     elements.append(Spacer(1, 0.3*cm))
-    elements.append(Paragraph("Key Insights", section_style))
-    for insight in last_report.get('key_insights', []):
-        elements.append(Paragraph(f"• {insight}", body_style))
-
-    elements.append(Spacer(1, 1*cm))
-    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#eeeeee')))
     elements.append(Paragraph(
-        "Generated by Reportly — reportly-d8de.onrender.com",
-        ParagraphStyle('Footer', fontSize=9, textColor=colors.HexColor('#999999'), alignment=TA_CENTER)
+        "Generated by Reportly · Confidential · For Client Use Only",
+        footer_style
     ))
 
     doc.build(elements)
@@ -257,7 +317,6 @@ def download_client():
         download_name="client_report.pdf",
         mimetype="application/pdf"
     )
-
 
 @app.route("/download/smm")
 def download_smm():
@@ -335,13 +394,31 @@ def download_smm():
             f"Why it failed: {item.get('reason', '')}",
             body_style
         ))
-        elements.append(Spacer(1, 0.2*cm))
+        elements.append(Paragraph(
+            f"Replace with: {item.get('replacement', '')}",
+            ParagraphStyle(
+                'Replace',
+                fontSize=10,
+                fontName='Helvetica-Bold',
+                textColor=colors.HexColor('#2563eb'),
+                spaceAfter=8,
+                leading=15
+            )
+        ))
+        elements.append(Spacer(1, 0.2 * cm))
 
     elements.append(Paragraph("Format Velocity", section_style))
     elements.append(Paragraph(last_report.get('format_velocity', ''), body_style))
 
     elements.append(Paragraph("Save-to-Reach Ratio", section_style))
-    elements.append(Paragraph(last_report.get('save_to_reach_ratio', ''), body_style))
+    elements.append(Paragraph(
+        f"Technical: {last_report.get('save_to_reach_ratio', '')}",
+        body_style
+    ))
+    elements.append(Paragraph(
+        f"What this means: {last_report.get('save_to_reach_client_friendly', '')}",
+        body_style
+    ))
 
     elements.append(Paragraph("Post Performance Breakdown", section_style))
     posts = last_report.get('posts', [])
