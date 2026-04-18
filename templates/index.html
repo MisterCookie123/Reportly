@@ -5,13 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reportly</title>
     <link rel="stylesheet" href="/static/style.css">
-    <link rel="icon" type="image/x-icon" href="/static/reportly_icon.png">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>Reportly</h1>
             <p class="subtitle">Turn raw social media data into strategic client reports — instantly.</p>
+        </div>
+
+        <div class="instagram-section">
+            <label>Fetch directly from Instagram:</label>
+            <div class="instagram-input">
+                <input type="text" id="instagramUsername"
+                       placeholder="@username or profile URL" />
+                <button onclick="fetchInstagram()"
+                        id="fetchBtn">Fetch Data</button>
+            </div>
+            <p class="instagram-note">Or paste data manually below</p>
         </div>
 
         <div class="input-section">
@@ -48,10 +59,11 @@
             </div>
 
             <div class="button-group">
-    <button onclick="copyReport()" class="copy-btn">Copy Report</button>
-    <button onclick="downloadPDF('client')" class="client-btn">Download Client Report PDF</button>
-    <button onclick="downloadPDF('smm')" class="smm-btn">Download SMM Report PDF</button>
-</div>
+                <button onclick="copyReport()" class="copy-btn">Copy Report</button>
+                <button onclick="downloadPDF('client')" class="client-btn">Download Client Report PDF</button>
+                <button onclick="downloadPDF('smm')" class="smm-btn">Download SMM Report PDF</button>
+            </div>
+
         </div>
     </div>
     <script src="/static/script.js"></script>

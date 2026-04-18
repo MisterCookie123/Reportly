@@ -10,6 +10,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 import os
 import json
 import io
+from instagram import fetch_instagram_data, format_for_reportly
 
 load_dotenv()
 
@@ -469,6 +470,36 @@ def download_smm():
         download_name="smm_report.pdf",
         mimetype="application/pdf"
     )
+
+@app.route("/fetch-instagram", methods=["POST"])
+def fetch_instagram():
+    username = request.json.get("username", "").strip()
+
+    if not username:
+        return jsonify({"error": "No username provided"}), 400
+
+    username = username.replace("@", "").replace(
+        "https://www.instagram.com/", ""
+    ).strip("/")
+
+    try:
+        posts_data = fetch_instagram_data(username)
+
+        if not posts_data:
+            return jsonify({
+                "error": "No posts found or account is private"
+            }), 404
+
+        formatted_data = format_for_reportly(posts_data)
+        return jsonify({
+            "success": True,
+            "posts_count": len(posts_data),
+            "formatted_data": formatted_data,
+            "raw_data": posts_data
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

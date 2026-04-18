@@ -88,3 +88,47 @@ function copyReport() {
 function downloadPDF(type) {
     window.location.href = '/download/' + type;
 }
+
+async function fetchInstagram() {
+    const username = document.getElementById("instagramUsername").value;
+
+    if (!username.trim()) {
+        alert("Please enter an Instagram username.");
+        return;
+    }
+
+    document.getElementById("fetchBtn").disabled = true;
+    document.getElementById("fetchBtn").innerText = "Fetching...";
+    document.getElementById("loading").style.display = "block";
+
+    try {
+        const response = await fetch("/fetch-instagram", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: username })
+        });
+
+        const result = await response.json();
+
+        if (result.error) {
+            alert("Error: " + result.error);
+            document.getElementById("fetchBtn").disabled = false;
+            document.getElementById("fetchBtn").innerText = "Fetch Data";
+            document.getElementById("loading").style.display = "none";
+            return;
+        }
+
+        document.getElementById("dataInput").value = result.formatted_data;
+        document.getElementById("fetchBtn").disabled = false;
+        document.getElementById("fetchBtn").innerText = "Fetch Data";
+        document.getElementById("loading").style.display = "none";
+
+        alert(`Successfully fetched ${result.posts_count} posts. Click Generate Report to analyze.`);
+
+    } catch (error) {
+        alert("Something went wrong fetching Instagram data.");
+        document.getElementById("fetchBtn").disabled = false;
+        document.getElementById("fetchBtn").innerText = "Fetch Data";
+        document.getElementById("loading").style.display = "none";
+    }
+}
