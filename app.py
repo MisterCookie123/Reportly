@@ -152,221 +152,332 @@ def download_client():
     if not last_report:
         return "No report generated yet", 400
 
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm, mm
+    import io
+
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=2*cm,
-        leftMargin=2*cm,
-        topMargin=2.5*cm,
-        bottomMargin=2.5*cm
-    )
+    page_width, page_height = A4
 
-    elements = []
+    c = canvas.Canvas(buffer, pagesize=A4)
 
-    title_style = ParagraphStyle(
-        'Title',
-        fontSize=28,
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#000000'),
-        spaceAfter=8,
-        spaceBefore=0,
-        alignment=TA_CENTER,
-        leading=34
-    )
-    tagline_style = ParagraphStyle(
-        'Tagline',
-        fontSize=12,
-        fontName='Helvetica',
-        textColor=colors.HexColor('#888888'),
-        spaceAfter=16,
-        spaceBefore=0,
-        alignment=TA_CENTER,
-        leading=16
-    )
-    score_number_style = ParagraphStyle(
-        'ScoreNumber',
-        fontSize=72,
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#000000'),
-        alignment=TA_CENTER,
-        spaceAfter=4,
-        spaceBefore=16,
-        leading=80
-    )
-    score_label_style = ParagraphStyle(
-        'ScoreLabel',
-        fontSize=12,
-        fontName='Helvetica',
-        textColor=colors.HexColor('#888888'),
-        alignment=TA_CENTER,
-        spaceAfter=6,
-        spaceBefore=0,
-        leading=16
-    )
-    health_style = ParagraphStyle(
-        'Health',
-        fontSize=12,
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#16a34a'),
-        alignment=TA_CENTER,
-        spaceAfter=20,
-        spaceBefore=0,
-        leading=16
-    )
-    section_style = ParagraphStyle(
-        'Section',
-        fontSize=14,
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#000000'),
-        spaceBefore=20,
-        spaceAfter=8,
-        leading=18
-    )
-    body_style = ParagraphStyle(
-        'Body',
-        fontSize=11,
-        fontName='Helvetica',
-        textColor=colors.HexColor('#444444'),
-        spaceAfter=8,
-        spaceBefore=0,
-        leading=18
-    )
-    interest_style = ParagraphStyle(
-        'Interest',
-        fontSize=12,
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#2563eb'),
-        spaceAfter=8,
-        spaceBefore=0,
-        alignment=TA_CENTER,
-        leading=18
-    )
-    win_title_style = ParagraphStyle(
-        'WinTitle',
-        fontSize=12,
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#000000'),
-        spaceAfter=4,
-        spaceBefore=8,
-        leading=16
-    )
-    win_body_style = ParagraphStyle(
-        'WinBody',
-        fontSize=10,
-        fontName='Helvetica',
-        textColor=colors.HexColor('#555555'),
-        spaceAfter=8,
-        spaceBefore=0,
-        leading=15
-    )
-    bullet_style = ParagraphStyle(
-        'Bullet',
-        fontSize=11,
-        fontName='Helvetica',
-        textColor=colors.HexColor('#444444'),
-        spaceAfter=6,
-        spaceBefore=0,
-        leading=16,
-        leftIndent=12
-    )
-    footer_style = ParagraphStyle(
-        'Footer',
-        fontSize=9,
-        fontName='Helvetica',
-        textColor=colors.HexColor('#bbbbbb'),
-        alignment=TA_CENTER,
-        leading=12
-    )
+    MIDNIGHT = (18/255, 18/255, 18/255)
+    CARD_BG = (30/255, 30/255, 30/255)
+    CARD_LIGHT = (40/255, 40/255, 40/255)
+    WHITE = (1, 1, 1)
+    MUTED = (160/255, 160/255, 160/255)
+    CYAN = (0/255, 255/255, 255/255)
+    PURPLE = (191/255, 0/255, 255/255)
+    GREEN = (74/255, 222/255, 128/255)
+    AMBER = (251/255, 146/255, 60/255)
+    RED = (248/255, 113/255, 113/255)
 
-    elements.append(Spacer(1, 0.5*cm))
-    elements.append(Paragraph("Monthly Performance Report", title_style))
-    elements.append(Paragraph("Prepared exclusively for you", tagline_style))
-    elements.append(HRFlowable(
-        width="100%",
-        thickness=0.5,
-        color=colors.HexColor('#dddddd'),
-        spaceAfter=0
-    ))
+    def set_color(rgb):
+        c.setFillColorRGB(*rgb)
+
+    def set_stroke(rgb):
+        c.setStrokeColorRGB(*rgb)
+
+    def draw_background():
+        set_color(MIDNIGHT)
+        c.rect(0, 0, page_width, page_height, fill=1, stroke=0)
+
+    def draw_card(x, y, w, h, bg=CARD_BG, border=PURPLE, radius=8):
+        set_color(bg)
+        c.roundRect(x, y, w, h, radius, fill=1, stroke=0)
+        set_stroke(border)
+        c.setLineWidth(0.5)
+        c.roundRect(x, y, w, h, radius, fill=0, stroke=1)
+
+    def draw_section_line(y):
+        set_stroke(PURPLE)
+        c.setLineWidth(0.5)
+        c.line(2*cm, y, page_width - 2*cm, y)
+
+    def draw_progress_bar(x, y, w, h, percent, color=CYAN, bg=CARD_LIGHT):
+        set_color(bg)
+        c.roundRect(x, y, w, h, 3, fill=1, stroke=0)
+        filled_w = max(w * min(percent / 100, 1), 0)
+        if filled_w > 0:
+            set_color(color)
+            c.roundRect(x, y, filled_w, h, 3, fill=1, stroke=0)
+
+    def draw_text(text, x, y, font="Helvetica", size=11, color=WHITE):
+        set_color(color)
+        c.setFont(font, size)
+        c.drawString(x, y, str(text))
+
+    def draw_centered_text(text, y, font="Helvetica", size=11, color=WHITE):
+        set_color(color)
+        c.setFont(font, size)
+        c.drawCentredString(page_width / 2, y, str(text))
+
+    def new_page():
+        draw_background()
+
+    draw_background()
+
+    c.setFont("Helvetica-Bold", 9)
+    set_color(PURPLE)
+    c.drawString(2*cm, page_height - 1.2*cm, "REPORTLY")
+    set_color(MUTED)
+    c.setFont("Helvetica", 9)
+    c.drawRightString(page_width - 2*cm, page_height - 1.2*cm, "CONFIDENTIAL · CLIENT REPORT")
+
+    draw_section_line(page_height - 1.5*cm)
+
+    draw_centered_text(
+        "MONTHLY PERFORMANCE REPORT",
+        page_height - 2.5*cm,
+        font="Helvetica-Bold",
+        size=18,
+        color=WHITE
+    )
+    draw_centered_text(
+        "Prepared exclusively for you",
+        page_height - 3.1*cm,
+        font="Helvetica",
+        size=10,
+        color=MUTED
+    )
 
     score = last_report.get('brand_health_score', 0)
     health = last_report.get('business_health', 'N/A')
 
-    elements.append(Paragraph(str(score), score_number_style))
-    elements.append(Paragraph("Brand Health Score", score_label_style))
-    elements.append(Paragraph(f"Status: {health}", health_style))
+    card_y = page_height - 7.5*cm
+    card_h = 4*cm
+    card_x = page_width / 2 - 5*cm
+    card_w = 10*cm
 
-    elements.append(HRFlowable(
-        width="100%",
-        thickness=0.5,
-        color=colors.HexColor('#dddddd'),
-        spaceAfter=0
-    ))
-    elements.append(Spacer(1, 0.4*cm))
+    draw_card(card_x, card_y, card_w, card_h, bg=CARD_BG, border=CYAN, radius=10)
 
-    elements.append(Paragraph("What We Achieved This Month", section_style))
+    draw_centered_text(
+        str(score),
+        card_y + card_h - 1.2*cm,
+        font="Helvetica-Bold",
+        size=42,
+        color=CYAN
+    )
+    draw_centered_text(
+        "BRAND HEALTH SCORE",
+        card_y + 1.2*cm,
+        font="Helvetica-Bold",
+        size=8,
+        color=MUTED
+    )
+
+    if health == "Good":
+        status_color = GREEN
+    elif health == "Needs Attention":
+        status_color = AMBER
+    else:
+        status_color = RED
+
+    draw_centered_text(
+        f"STATUS: {health.upper()}",
+        card_y + 0.5*cm,
+        font="Helvetica-Bold",
+        size=9,
+        color=status_color
+    )
+
+    current_y = card_y - 0.8*cm
+    draw_section_line(current_y)
+
+    current_y -= 0.6*cm
+    draw_text(
+        "WHAT WE ACHIEVED THIS MONTH",
+        2*cm,
+        current_y,
+        font="Helvetica-Bold",
+        size=11,
+        color=CYAN
+    )
+
+    current_y -= 0.5*cm
     executive = last_report.get('executive_summary', '')
     if executive:
-        elements.append(Paragraph(executive, body_style))
-    elements.append(Spacer(1, 0.3*cm))
+        from reportlab.lib.utils import simpleSplit
+        words = simpleSplit(executive, "Helvetica", 10, page_width - 4*cm)
+        for line in words:
+            current_y -= 0.45*cm
+            draw_text(line, 2*cm, current_y, font="Helvetica", size=10, color=WHITE)
+
+    current_y -= 0.8*cm
+    draw_section_line(current_y)
+    current_y -= 0.6*cm
 
     client_friendly = last_report.get('save_to_reach_client_friendly', '')
     if client_friendly:
-        elements.append(Paragraph("Your Audience Is Paying Attention", section_style))
-        elements.append(Paragraph(client_friendly, interest_style))
-        elements.append(Spacer(1, 0.3*cm))
+        draw_text(
+            "AUDIENCE INTEREST",
+            2*cm,
+            current_y,
+            font="Helvetica-Bold",
+            size=11,
+            color=CYAN
+        )
+        current_y -= 0.5*cm
+
+        interest_words = simpleSplit(client_friendly, "Helvetica-Bold", 10, page_width - 4*cm)
+        for line in interest_words:
+            current_y -= 0.45*cm
+            draw_text(line, 2*cm, current_y, font="Helvetica-Bold", size=10, color=GREEN)
+
+        current_y -= 0.8*cm
+        draw_section_line(current_y)
+        current_y -= 0.6*cm
 
     posts = last_report.get('posts', [])
-    top_posts = sorted(
-        posts,
-        key=lambda x: x.get('impact_score', 0),
-        reverse=True
-    )[:3]
+    top_posts = sorted(posts, key=lambda x: x.get('impact_score', 0), reverse=True)[:3]
 
     if top_posts:
-        elements.append(Paragraph("Top 3 Wins This Month", section_style))
-        win_labels = ["First Win", "Second Win", "Third Win"]
+        draw_text(
+            "TOP 3 WINS THIS MONTH",
+            2*cm,
+            current_y,
+            font="Helvetica-Bold",
+            size=11,
+            color=CYAN
+        )
+        current_y -= 0.5*cm
+
+        max_score = max(p.get('impact_score', 1) for p in top_posts) or 1
+        win_labels = ["01", "02", "03"]
+
         for i, post in enumerate(top_posts):
-            label = win_labels[i] if i < len(win_labels) else f"Win {i+1}"
-            title = post.get('post_title', 'Unknown post')
-            score_val = post.get('impact_score', 0)
+            if current_y < 4*cm:
+                c.showPage()
+                new_page()
+                current_y = page_height - 2*cm
+                draw_section_line(current_y)
+                current_y -= 0.6*cm
+
+            win_card_h = 2.2*cm
+            win_card_y = current_y - win_card_h
+            draw_card(2*cm, win_card_y, page_width - 4*cm, win_card_h, bg=CARD_BG, border=PURPLE, radius=6)
+
+            draw_text(
+                win_labels[i],
+                2.4*cm,
+                win_card_y + win_card_h - 0.6*cm,
+                font="Helvetica-Bold",
+                size=14,
+                color=PURPLE
+            )
+
+            title = post.get('post_title', '')[:55]
+            draw_text(
+                title,
+                3.4*cm,
+                win_card_y + win_card_h - 0.6*cm,
+                font="Helvetica-Bold",
+                size=10,
+                color=WHITE
+            )
+
             rating = post.get('efficiency_rating', '')
-            elements.append(Paragraph(f"{label}: {title}", win_title_style))
-            elements.append(Paragraph(
-                f"This content delivered strong business value with an impact "
-                f"score of {score_val} — rated {rating}.",
-                win_body_style
-            ))
-        elements.append(Spacer(1, 0.3*cm))
+            rating_color = GREEN if rating == "High-Value Content" else (RED if rating == "Low-Efficiency Growth" else AMBER)
+            draw_text(
+                rating.upper(),
+                3.4*cm,
+                win_card_y + 0.9*cm,
+                font="Helvetica-Bold",
+                size=8,
+                color=rating_color
+            )
+
+            score_val = post.get('impact_score', 0)
+            bar_w = page_width - 4*cm - 1.5*cm - 2.5*cm
+            bar_x = 3.4*cm
+            bar_y = win_card_y + 0.4*cm
+            bar_percent = (score_val / max_score) * 100
+            draw_progress_bar(bar_x, bar_y, bar_w, 0.2*cm, bar_percent, color=CYAN)
+
+            score_text = f"Score: {score_val}"
+            draw_text(
+                score_text,
+                page_width - 4*cm,
+                win_card_y + win_card_h - 0.6*cm,
+                font="Helvetica-Bold",
+                size=9,
+                color=CYAN
+            )
+
+            current_y = win_card_y - 0.3*cm
+
+        current_y -= 0.5*cm
+
+    if current_y < 4*cm:
+        c.showPage()
+        new_page()
+        current_y = page_height - 2*cm
+
+    draw_section_line(current_y)
+    current_y -= 0.6*cm
 
     key_insights = last_report.get('key_insights', [])
     if key_insights:
-        elements.append(Paragraph("Key Takeaways", section_style))
+        draw_text(
+            "KEY TAKEAWAYS",
+            2*cm,
+            current_y,
+            font="Helvetica-Bold",
+            size=11,
+            color=CYAN
+        )
+        current_y -= 0.5*cm
+
         for insight in key_insights:
-            elements.append(Paragraph(f"— {insight}", bullet_style))
-        elements.append(Spacer(1, 0.3*cm))
+            if current_y < 4*cm:
+                c.showPage()
+                new_page()
+                current_y = page_height - 2*cm
+
+            insight_lines = simpleSplit(f"— {insight}", "Helvetica", 10, page_width - 4.5*cm)
+            for line in insight_lines:
+                current_y -= 0.45*cm
+                draw_text(line, 2.3*cm, current_y, font="Helvetica", size=10, color=WHITE)
+            current_y -= 0.2*cm
+
+        current_y -= 0.4*cm
+
+    if current_y < 4*cm:
+        c.showPage()
+        new_page()
+        current_y = page_height - 2*cm
+
+    draw_section_line(current_y)
+    current_y -= 0.6*cm
 
     next_month = last_report.get('next_month_vision', '')
     if next_month:
-        elements.append(Paragraph(
-            "What We're Building Toward Next Month",
-            section_style
-        ))
-        elements.append(Paragraph(next_month, body_style))
+        draw_text(
+            "WHAT WE'RE BUILDING TOWARD NEXT MONTH",
+            2*cm,
+            current_y,
+            font="Helvetica-Bold",
+            size=11,
+            color=CYAN
+        )
+        current_y -= 0.5*cm
 
-    elements.append(Spacer(1, 1*cm))
-    elements.append(HRFlowable(
-        width="100%",
-        thickness=0.5,
-        color=colors.HexColor('#dddddd'),
-        spaceAfter=8
-    ))
-    elements.append(Paragraph(
-        "Generated by Reportly · Confidential · For Client Use Only",
-        footer_style
-    ))
+        next_lines = simpleSplit(next_month, "Helvetica", 10, page_width - 4*cm)
+        for line in next_lines:
+            current_y -= 0.45*cm
+            draw_text(line, 2*cm, current_y, font="Helvetica", size=10, color=WHITE)
 
-    doc.build(elements)
+    draw_section_line(1.8*cm)
+    set_color(MUTED)
+    c.setFont("Helvetica", 8)
+    c.drawCentredString(
+        page_width / 2,
+        1.2*cm,
+        "Generated by Reportly · Confidential · For Client Use Only"
+    )
+
+    c.save()
     buffer.seek(0)
 
     return send_file(
@@ -381,139 +492,359 @@ def download_smm():
     if not last_report:
         return "No report generated yet", 400
 
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm
+    from reportlab.lib.utils import simpleSplit
+    import io
+
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=2*cm,
-        leftMargin=2*cm,
-        topMargin=2*cm,
-        bottomMargin=2*cm
+    page_width, page_height = A4
+
+    c = canvas.Canvas(buffer, pagesize=A4)
+
+    MIDNIGHT = (18/255, 18/255, 18/255)
+    CARD_BG = (30/255, 30/255, 30/255)
+    CARD_LIGHT = (40/255, 40/255, 40/255)
+    WHITE = (1, 1, 1)
+    MUTED = (160/255, 160/255, 160/255)
+    CYAN = (0/255, 255/255, 255/255)
+    PURPLE = (191/255, 0/255, 255/255)
+    GREEN = (74/255, 222/255, 128/255)
+    AMBER = (251/255, 146/255, 60/255)
+    RED = (248/255, 113/255, 113/255)
+    BLUE = (59/255, 130/255, 246/255)
+
+    def set_color(rgb):
+        c.setFillColorRGB(*rgb)
+
+    def set_stroke(rgb):
+        c.setStrokeColorRGB(*rgb)
+
+    def draw_background():
+        set_color(MIDNIGHT)
+        c.rect(0, 0, page_width, page_height, fill=1, stroke=0)
+
+    def draw_card(x, y, w, h, bg=CARD_BG, border=PURPLE, radius=8):
+        set_color(bg)
+        c.roundRect(x, y, w, h, radius, fill=1, stroke=0)
+        set_stroke(border)
+        c.setLineWidth(0.5)
+        c.roundRect(x, y, w, h, radius, fill=0, stroke=1)
+
+    def draw_section_line(y, color=PURPLE):
+        set_stroke(color)
+        c.setLineWidth(0.5)
+        c.line(2*cm, y, page_width - 2*cm, y)
+
+    def draw_progress_bar(x, y, w, h, percent, color=CYAN, bg=CARD_LIGHT):
+        set_color(bg)
+        c.roundRect(x, y, w, h, 3, fill=1, stroke=0)
+        filled_w = max(w * min(percent / 100, 1), 0)
+        if filled_w > 0:
+            set_color(color)
+            c.roundRect(x, y, filled_w, h, 3, fill=1, stroke=0)
+
+    def draw_text(text, x, y, font="Helvetica", size=11, color=WHITE):
+        set_color(color)
+        c.setFont(font, size)
+        c.drawString(x, y, str(text))
+
+    def draw_centered_text(text, y, font="Helvetica", size=11, color=WHITE):
+        set_color(color)
+        c.setFont(font, size)
+        c.drawCentredString(page_width / 2, y, str(text))
+
+    def check_page_break(y, threshold=4*cm):
+        if y < threshold:
+            c.showPage()
+            draw_background()
+            draw_header()
+            return page_height - 2.5*cm
+        return y
+
+    def draw_header():
+        set_color(PURPLE)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(2*cm, page_height - 1.2*cm, "REPORTLY")
+        set_color(MUTED)
+        c.setFont("Helvetica", 9)
+        c.drawRightString(
+            page_width - 2*cm,
+            page_height - 1.2*cm,
+            "INTERNAL · SMM TACTICAL REPORT"
+        )
+        draw_section_line(page_height - 1.5*cm)
+
+    draw_background()
+    draw_header()
+
+    draw_centered_text(
+        "SMM TACTICAL REPORT",
+        page_height - 2.5*cm,
+        font="Helvetica-Bold",
+        size=20,
+        color=WHITE
+    )
+    draw_centered_text(
+        "Internal Use Only — Do Not Share With Client",
+        page_height - 3.1*cm,
+        font="Helvetica",
+        size=9,
+        color=RED
     )
 
-    styles = getSampleStyleSheet()
-    elements = []
+    current_y = page_height - 3.8*cm
+    draw_section_line(current_y)
+    current_y -= 0.7*cm
 
-    title_style = ParagraphStyle(
-        'Title',
-        fontSize=24,
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#000000'),
-        spaceAfter=4,
-        alignment=TA_CENTER
+    draw_text(
+        "THE KILL LIST",
+        2*cm,
+        current_y,
+        font="Helvetica-Bold",
+        size=13,
+        color=RED
     )
-    subtitle_style = ParagraphStyle(
-        'Subtitle',
-        fontSize=11,
-        fontName='Helvetica',
-        textColor=colors.HexColor('#666666'),
-        spaceAfter=20,
-        alignment=TA_CENTER
+    draw_text(
+        "Posts to kill or completely rethink",
+        8*cm,
+        current_y,
+        font="Helvetica",
+        size=9,
+        color=MUTED
     )
-    section_style = ParagraphStyle(
-        'Section',
-        fontSize=13,
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor('#000000'),
-        spaceBefore=16,
-        spaceAfter=8
+    current_y -= 0.5*cm
+
+    kill_list = last_report.get('kill_list', [])
+    for item in kill_list:
+        current_y = check_page_break(current_y, 5*cm)
+
+        card_h = 2.8*cm
+        card_y = current_y - card_h
+        draw_card(2*cm, card_y, page_width - 4*cm, card_h, bg=CARD_BG, border=RED, radius=6)
+
+        set_color(RED)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(2.4*cm, card_y + card_h - 0.6*cm, "✕")
+
+        title = item.get('post_title', '')[:55]
+        draw_text(
+            title,
+            3.0*cm,
+            card_y + card_h - 0.6*cm,
+            font="Helvetica-Bold",
+            size=10,
+            color=WHITE
+        )
+
+        reason = item.get('reason', '')
+        reason_lines = simpleSplit(f"Why: {reason}", "Helvetica", 9, page_width - 5.5*cm)
+        reason_y = card_y + card_h - 1.1*cm
+        for line in reason_lines:
+            draw_text(line, 2.4*cm, reason_y, font="Helvetica", size=9, color=MUTED)
+            reason_y -= 0.35*cm
+
+        replacement = item.get('replacement', '')
+        replacement_lines = simpleSplit(
+            f"Replace with: {replacement}",
+            "Helvetica-Bold",
+            9,
+            page_width - 5.5*cm
+        )
+        replace_y = card_y + 0.5*cm
+        for line in replacement_lines:
+            draw_text(line, 2.4*cm, replace_y, font="Helvetica-Bold", size=9, color=BLUE)
+            replace_y -= 0.35*cm
+
+        current_y = card_y - 0.4*cm
+
+    current_y -= 0.3*cm
+    current_y = check_page_break(current_y)
+    draw_section_line(current_y)
+    current_y -= 0.7*cm
+
+    draw_text(
+        "FORMAT VELOCITY",
+        2*cm,
+        current_y,
+        font="Helvetica-Bold",
+        size=13,
+        color=CYAN
     )
-    body_style = ParagraphStyle(
-        'Body',
-        fontSize=10,
-        fontName='Helvetica',
-        textColor=colors.HexColor('#333333'),
-        spaceAfter=5,
-        leading=15
+    current_y -= 0.5*cm
+
+    format_velocity = last_report.get('format_velocity', '')
+    if format_velocity:
+        fv_lines = simpleSplit(format_velocity, "Helvetica", 10, page_width - 4*cm)
+        for line in fv_lines:
+            draw_text(line, 2*cm, current_y, font="Helvetica", size=10, color=WHITE)
+            current_y -= 0.45*cm
+
+    current_y -= 0.5*cm
+    current_y = check_page_break(current_y)
+    draw_section_line(current_y)
+    current_y -= 0.7*cm
+
+    draw_text(
+        "SAVE-TO-REACH RATIO",
+        2*cm,
+        current_y,
+        font="Helvetica-Bold",
+        size=13,
+        color=CYAN
     )
-    warning_style = ParagraphStyle(
-        'Warning',
-        fontSize=10,
-        fontName='Helvetica',
-        textColor=colors.HexColor('#cc0000'),
-        spaceAfter=5,
-        leading=15
+    current_y -= 0.5*cm
+
+    ratio_card_h = 1.8*cm
+    ratio_card_y = current_y - ratio_card_h
+    draw_card(2*cm, ratio_card_y, page_width - 4*cm, ratio_card_h, bg=CARD_BG, border=CYAN, radius=6)
+
+    draw_text(
+        f"Technical: {last_report.get('save_to_reach_ratio', 'N/A')}",
+        2.4*cm,
+        ratio_card_y + ratio_card_h - 0.6*cm,
+        font="Helvetica-Bold",
+        size=10,
+        color=CYAN
+    )
+    draw_text(
+        f"Meaning: {last_report.get('save_to_reach_client_friendly', '')}",
+        2.4*cm,
+        ratio_card_y + 0.5*cm,
+        font="Helvetica",
+        size=9,
+        color=MUTED
     )
 
-    elements.append(Spacer(1, 0.5*cm))
-    elements.append(Paragraph("SMM Tactical Report — Internal Use Only", subtitle_style))
-    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#eeeeee')))
-    elements.append(Spacer(1, 0.3*cm))
+    current_y = ratio_card_y - 0.7*cm
+    current_y = check_page_break(current_y)
+    draw_section_line(current_y)
+    current_y -= 0.7*cm
 
-    elements.append(Paragraph("The Kill List", section_style))
-    elements.append(Paragraph("Posts to kill or completely rethink:", body_style))
-    for item in last_report.get('kill_list', []):
-        elements.append(Paragraph(
-            f"<b>✕ {item.get('post_title', '')}</b>",
-            warning_style
-        ))
-        elements.append(Paragraph(
-            f"Why it failed: {item.get('reason', '')}",
-            body_style
-        ))
-        elements.append(Paragraph(
-            f"Replace with: {item.get('replacement', '')}",
-            ParagraphStyle(
-                'Replace',
-                fontSize=10,
-                fontName='Helvetica-Bold',
-                textColor=colors.HexColor('#2563eb'),
-                spaceAfter=8,
-                leading=15
-            )
-        ))
-        elements.append(Spacer(1, 0.2 * cm))
+    draw_text(
+        "POST PERFORMANCE BREAKDOWN",
+        2*cm,
+        current_y,
+        font="Helvetica-Bold",
+        size=13,
+        color=CYAN
+    )
+    current_y -= 0.6*cm
 
-    elements.append(Paragraph("Format Velocity", section_style))
-    elements.append(Paragraph(last_report.get('format_velocity', ''), body_style))
-
-    elements.append(Paragraph("Save-to-Reach Ratio", section_style))
-    elements.append(Paragraph(
-        f"Technical: {last_report.get('save_to_reach_ratio', '')}",
-        body_style
-    ))
-    elements.append(Paragraph(
-        f"What this means: {last_report.get('save_to_reach_client_friendly', '')}",
-        body_style
-    ))
-
-    elements.append(Paragraph("Post Performance Breakdown", section_style))
     posts = last_report.get('posts', [])
-    if posts:
-        table_data = [['Post', 'Impact Score', 'Rating']]
-        for post in sorted(posts, key=lambda x: x.get('impact_score', 0), reverse=True):
-            table_data.append([
-                post.get('post_title', '')[:40],
-                str(post.get('impact_score', 0)),
-                post.get('efficiency_rating', '')
-            ])
+    sorted_posts = sorted(posts, key=lambda x: x.get('impact_score', 0), reverse=True)
 
-        table = Table(table_data, colWidths=[9*cm, 3*cm, 5*cm])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#000000')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#f9f9f9'), colors.white]),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#eeeeee')),
-            ('PADDING', (0, 0), (-1, -1), 6),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]))
-        elements.append(table)
+    header_h = 0.55*cm
+    header_y = current_y - header_h
+    draw_card(2*cm, header_y, page_width - 4*cm, header_h, bg=CARD_LIGHT, border=PURPLE, radius=4)
 
-    elements.append(Paragraph("4-Week Battle Plan", section_style))
-    for i, action in enumerate(last_report.get('battle_plan', []), 1):
-        elements.append(Paragraph(f"Week {i}: {action}", body_style))
+    draw_text("POST", 2.3*cm, header_y + 0.15*cm, font="Helvetica-Bold", size=8, color=PURPLE)
+    draw_text("SCORE", page_width - 6.5*cm, header_y + 0.15*cm, font="Helvetica-Bold", size=8, color=PURPLE)
+    draw_text("RATING", page_width - 4.8*cm, header_y + 0.15*cm, font="Helvetica-Bold", size=8, color=PURPLE)
+    current_y = header_y - 0.2*cm
 
-    elements.append(Paragraph("Overall Recommendations", section_style))
+    max_score = max((p.get('impact_score', 1) for p in sorted_posts), default=1) or 1
+
+    for i, post in enumerate(sorted_posts):
+        current_y = check_page_break(current_y, 3*cm)
+
+        row_h = 0.9*cm
+        row_y = current_y - row_h
+        row_bg = CARD_BG if i % 2 == 0 else (25/255, 25/255, 25/255)
+        draw_card(2*cm, row_y, page_width - 4*cm, row_h, bg=row_bg, border=PURPLE, radius=4)
+
+        title = post.get('post_title', '')[:38]
+        draw_text(title, 2.3*cm, row_y + 0.32*cm, font="Helvetica", size=8, color=WHITE)
+
+        score_val = post.get('impact_score', 0)
+        bar_w = 2.5*cm
+        bar_x = page_width - 7.5*cm
+        draw_progress_bar(bar_x, row_y + 0.3*cm, bar_w, 0.25*cm, (score_val / max_score) * 100, color=CYAN)
+        draw_text(str(score_val), page_width - 6.4*cm, row_y + 0.32*cm, font="Helvetica-Bold", size=8, color=CYAN)
+
+        rating = post.get('efficiency_rating', '')
+        rating_color = GREEN if rating == "High-Value Content" else (RED if rating == "Low-Efficiency Growth" else AMBER)
+        draw_text(rating[:18], page_width - 4.8*cm, row_y + 0.32*cm, font="Helvetica-Bold", size=7, color=rating_color)
+
+        current_y = row_y - 0.15*cm
+
+    current_y -= 0.5*cm
+    current_y = check_page_break(current_y)
+    draw_section_line(current_y)
+    current_y -= 0.7*cm
+
+    draw_text(
+        "4-WEEK BATTLE PLAN",
+        2*cm,
+        current_y,
+        font="Helvetica-Bold",
+        size=13,
+        color=CYAN
+    )
+    current_y -= 0.5*cm
+
+    battle_plan = last_report.get('battle_plan', [])
+    week_colors = [CYAN, PURPLE, GREEN, AMBER]
+
+    for i, action in enumerate(battle_plan):
+        current_y = check_page_break(current_y, 3*cm)
+
+        week_card_h = 1.4*cm
+        week_card_y = current_y - week_card_h
+        week_color = week_colors[i % len(week_colors)]
+        draw_card(2*cm, week_card_y, page_width - 4*cm, week_card_h, bg=CARD_BG, border=week_color, radius=6)
+
+        draw_text(
+            f"WEEK {i+1}",
+            2.4*cm,
+            week_card_y + week_card_h - 0.55*cm,
+            font="Helvetica-Bold",
+            size=8,
+            color=week_color
+        )
+
+        action_lines = simpleSplit(action, "Helvetica", 9, page_width - 6.5*cm)
+        action_y = week_card_y + week_card_h - 0.55*cm
+        for line in action_lines:
+            draw_text(line, 4.2*cm, action_y, font="Helvetica", size=9, color=WHITE)
+            action_y -= 0.38*cm
+
+        current_y = week_card_y - 0.3*cm
+
+    current_y -= 0.3*cm
+    current_y = check_page_break(current_y)
+    draw_section_line(current_y)
+    current_y -= 0.7*cm
+
+    draw_text(
+        "OVERALL RECOMMENDATIONS",
+        2*cm,
+        current_y,
+        font="Helvetica-Bold",
+        size=13,
+        color=CYAN
+    )
+    current_y -= 0.5*cm
+
     for rec in last_report.get('overall_recommendations', []):
-        elements.append(Paragraph(f"→ {rec}", body_style))
+        current_y = check_page_break(current_y, 2*cm)
+        rec_lines = simpleSplit(f"→  {rec}", "Helvetica", 10, page_width - 4.5*cm)
+        for line in rec_lines:
+            draw_text(line, 2.3*cm, current_y, font="Helvetica", size=10, color=WHITE)
+            current_y -= 0.45*cm
+        current_y -= 0.2*cm
 
-    elements.append(Spacer(1, 1*cm))
-    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#eeeeee')))
+    draw_section_line(1.8*cm)
+    set_color(MUTED)
+    c.setFont("Helvetica", 8)
+    c.drawCentredString(
+        page_width / 2,
+        1.2*cm,
+        "Generated by Reportly · Internal SMM Report · Do Not Distribute"
+    )
 
-    doc.build(elements)
+    c.save()
     buffer.seek(0)
 
     return send_file(
