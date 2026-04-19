@@ -1,152 +1,123 @@
-import instaloader
-import itertools
+import requests
 import os
-import json
 from datetime import datetime, timedelta
 
 
-CUSTOM_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/120.0.0.0 Safari/537.36"
-)
+def get_access_token() -> str:
+    return os.getenv("INSTAGRAM_ACCESS_TOKEN", "")
 
 
-def load_session_from_json(username: str, L: instaloader.Instaloader) -> instaloader.Instaloader:
-    cookie_file = "instagram_cookies.json"
-
-    if not os.path.exists(cookie_file):
-        print("instagram_cookies.json not found.")
-        print("Export cookies from Chrome using EditThisCookie and save as instagram_cookies.json")
-        return L
-
-    try:
-        with open(cookie_file, "r") as f:
-            cookies = json.load(f)
-
-        session_id = None
-
-        for cookie in cookies:
-            name = cookie.get("name", "")
-            value = cookie.get("value", "")
-            domain = cookie.get("domain", ".instagram.com")
-
-            if not domain.startswith("."):
-                domain = "." + domain
-
-            L.context._session.cookies.set(name, value, domain=domain)
-
-            if name == "sessionid":
-                session_id = value
-
-        if session_id:
-            print(f"Session ID found: {session_id[:10]}...")
-            print("Cookies loaded successfully")
-        else:
-            print("WARNING: No sessionid cookie found.")
-            print("Make sure you are logged into Instagram in Chrome before exporting cookies.")
-
-    except Exception as e:
-        print(f"Failed to load cookies: {e}")
-
-    return L
+def get_ig_user_id() -> str:
+    return os.getenv("INSTAGRAM_USER_ID", "")
 
 
-def load_session(username: str) -> instaloader.Instaloader:
-    L = instaloader.Instaloader(
-        download_pictures=False,
-        download_videos=False,
-        download_video_thumbnails=False,
-        download_geotags=False,
-        download_comments=False,
-        save_metadata=False,
-        compress_json=False,
-        quiet=True
-    )
-
-    L.context._session.headers.update({
-        "User-Agent": CUSTOM_USER_AGENT
-    })
-
-    session_file = f"session-{username}"
-
-    if os.path.exists(session_file):
-        try:
-            L.load_session_from_file(username, session_file)
-            print(f"Session loaded from file for {username}")
-            return L
-        except Exception as e:
-            print(f"Session file failed: {e} — trying cookie JSON")
-
-    return load_session_from_json(username, L)
+def calculate_impact_score(likes: int, comments: int,
+                            saves: int, shares: int) -> int:
+    return (saves * 10) + (shares * 5) + (comments * 2) + (likes * 1)
 
 
-def calculate_impact_score(likes: int, comments: int) -> int:
-    return (likes * 1) + (comments * 5)
+def fetch_instagram_data(username: str = None) -> list:
+    access_token = get_access_token()
+    ig_user_id   = get_ig_user_id()
 
-
-def fetch_instagram_data(username: str) -> list:
-    username = username.replace("@", "").strip()
-
-    L = load_session(username)
-
-    try:
-        profile = instaloader.Profile.from_username(L.context, username)
-    except instaloader.exceptions.ProfileNotExistsException:
-        print(f"Profile {username} does not exist")
-        return []
-    except instaloader.exceptions.LoginRequiredException:
-        print(f"Profile {username} is private — login required")
-        return []
-    except Exception as e:
-        print(f"Could not fetch profile {username}: {e}")
+    if not access_token or not ig_user_id:
+        print("Missing INSTAGRAM_ACCESS_TOKEN or INSTAGRAM_USER_ID in environment.")
         return []
 
     posts_data = []
-    cutoff_date = datetime.utcnow() - timedelta(days=30)
+    cutoff     = datetime.utcnow() - timedelta(days=30)
 
-    try:
-        posts = profile.get_posts()
+    url    = f"https://graph.facebook.com/v26.0/{ig_user_id}/media"
+    params = {
+        "fields": (
+            "id,timestamp,caption,media_type,"
+            "like_count,comments_count,"
+            "insights.metric(reach,impressions,saved,shares)"
+        ),
+        "access_token": access_token,
+        "limit": 50,
+    }
 
-        recent_posts = itertools.takewhile(
-            lambda post: post.date_utc.replace(tzinfo=None) >= cutoff_date,
-            posts
-        )
+    while url:
+        response = requests.get(url, params=params, timeout=15)
 
-        for post in recent_posts:
-            post_type = "Reel" if post.is_video else "Image"
+        if response.status_code != 200:
+            print(f"API error {response.status_code}: {response.text}")
+            break
 
-            view_count = 0
-            if post.is_video:
-                try:
-                    view_count = post.video_view_count or 0
-                except Exception:
-                    view_count = 0
+        data  = response.json()
+        posts = data.get("data", [])
 
-            likes = post.likes or 0
-            comments_count = post.comments or 0
-            impact_score = calculate_impact_score(likes, comments_count)
+        for post in posts:
+            try:
+                post_date = datetime.strptime(
+                    post["timestamp"], "%Y-%m-%dT%H:%M:%S%z"
+                ).replace(tzinfo=None)
+            except Exception:
+                continue
 
-            post_data = {
-                "post_title": (post.caption[:80] + "...") if post.caption and len(post.caption) > 80 else (post.caption or "No caption"),
-                "post_type": post_type,
-                "likes": likes,
-                "comments": comments_count,
-                "view_count": view_count,
-                "saves": 0,
-                "impact_score": impact_score,
-                "date": post.date_utc.strftime("%Y-%m-%d"),
-                "shortcode": post.shortcode,
-                "url": f"https://www.instagram.com/p/{post.shortcode}/"
-            }
+            if post_date < cutoff:
+                url = None
+                break
 
-            posts_data.append(post_data)
-            print(f"Fetched: {post_data['post_title'][:40]} — Score: {impact_score}")
+            caption    = post.get("caption", "No caption")
+            media_type = post.get("media_type", "IMAGE")
 
-    except Exception as e:
-        print(f"Error fetching posts: {e}")
+            if media_type in ("VIDEO", "REELS"):
+                post_type = "Reel"
+            elif media_type == "CAROUSEL_ALBUM":
+                post_type = "Carousel"
+            else:
+                post_type = "Image"
 
-    print(f"\nTotal posts fetched: {len(posts_data)}")
+            likes    = post.get("like_count", 0) or 0
+            comments = post.get("comments_count", 0) or 0
+
+            reach       = 0
+            impressions = 0
+            saves       = 0
+            shares      = 0
+
+            insights = post.get("insights", {}).get("data", [])
+            for metric in insights:
+                name  = metric.get("name", "")
+                value = metric.get("values", [{}])[0].get("value", 0) or 0
+                if name == "reach":
+                    reach = value
+                elif name == "impressions":
+                    impressions = value
+                elif name == "saved":
+                    saves = value
+                elif name == "shares":
+                    shares = value
+
+            impact_score = calculate_impact_score(likes, comments, saves, shares)
+
+            posts_data.append({
+                "post_title":      (caption[:80] + "...") if len(caption) > 80 else caption,
+                "post_type":       post_type,
+                "date":            post_date.strftime("%Y-%m-%d"),
+                "likes":           likes,
+                "comments":        comments,
+                "saves":           saves,
+                "shares":          shares,
+                "reach":           reach,
+                "impressions":     impressions,
+                "profile_visits":  0,
+                "url_clicks":      0,
+                "impact_score":    impact_score,
+                "post_id":         post.get("id", ""),
+                "url": f"https://www.instagram.com/p/{post.get('id', '')}/"
+            })
+
+        next_page = data.get("paging", {}).get("next")
+        if next_page and url is not None:
+            url    = next_page
+            params = {}
+        else:
+            url = None
+
+    print(f"Fetched {len(posts_data)} posts from Instagram Graph API")
     return posts_data
 
 
@@ -154,21 +125,27 @@ def format_for_reportly(posts_data: list) -> str:
     if not posts_data:
         return "No posts found in the last 30 days."
 
-    reels = [p for p in posts_data if p['post_type'] == 'Reel']
-    images = [p for p in posts_data if p['post_type'] == 'Image']
-    total_likes = sum(p['likes'] for p in posts_data)
-    total_comments = sum(p['comments'] for p in posts_data)
-    total_views = sum(p['view_count'] for p in posts_data)
+    reels     = [p for p in posts_data if p["post_type"] == "Reel"]
+    images    = [p for p in posts_data if p["post_type"] == "Image"]
+    carousels = [p for p in posts_data if p["post_type"] == "Carousel"]
 
-    output = "Instagram Analytics — Last 30 Days\n"
+    total_likes       = sum(p["likes"]       for p in posts_data)
+    total_comments    = sum(p["comments"]    for p in posts_data)
+    total_saves       = sum(p["saves"]       for p in posts_data)
+    total_shares      = sum(p["shares"]      for p in posts_data)
+    total_reach       = sum(p["reach"]       for p in posts_data)
+    total_impressions = sum(p["impressions"] for p in posts_data)
+
+    output  = "Instagram Analytics — Last 30 Days\n"
     output += "=" * 40 + "\n\n"
     output += f"Total posts: {len(posts_data)}\n"
-    output += f"Reels: {len(reels)} | Images: {len(images)}\n"
+    output += f"Reels: {len(reels)} | Images: {len(images)} | Carousels: {len(carousels)}\n"
     output += f"Total likes: {total_likes}\n"
     output += f"Total comments: {total_comments}\n"
-    if total_views:
-        output += f"Total reel views: {total_views}\n"
-    output += "\n"
+    output += f"Total saves: {total_saves}\n"
+    output += f"Total shares: {total_shares}\n"
+    output += f"Total reach: {total_reach}\n"
+    output += f"Total impressions: {total_impressions}\n\n"
     output += "POST BREAKDOWN\n"
     output += "-" * 40 + "\n\n"
 
@@ -178,21 +155,19 @@ def format_for_reportly(posts_data: list) -> str:
         output += f"Date: {post['date']}\n"
         output += f"Likes: {post['likes']}\n"
         output += f"Comments: {post['comments']}\n"
-        if post['view_count']:
-            output += f"Views: {post['view_count']}\n"
+        output += f"Saves: {post['saves']}\n"
+        output += f"Shares: {post['shares']}\n"
+        output += f"Reach: {post['reach']}\n"
+        output += f"Impressions: {post['impressions']}\n"
         output += f"Impact Score: {post['impact_score']}\n"
-        output += f"URL: {post['url']}\n"
-        output += "\n"
+        output += f"URL: {post['url']}\n\n"
 
     return output
 
 
 if __name__ == "__main__":
-    test_username = input("Enter Instagram username to test: ")
-    print(f"\nFetching data for @{test_username}...\n")
-    data = fetch_instagram_data(test_username)
+    data = fetch_instagram_data()
     if data:
-        formatted = format_for_reportly(data)
-        print(formatted)
+        print(format_for_reportly(data))
     else:
-        print("No data fetched.")
+        print("No data fetched. Check your environment variables.")
