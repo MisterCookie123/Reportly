@@ -250,19 +250,34 @@ def generate():
                 "content": """You are a precise social media analyst. You extract numbers from messy data and calculate scores mechanically.
 
 STEP 1 — EXTRACT METRICS
-For every post mentioned in the data, extract these numbers:
-- post_title: name or description of the post
-- likes: number of likes (default 0 if missing)
-- comments: number of comments (default 0 if missing)
-- shares: number of shares (default 0 if missing)
-- saves: number of saves (default 0 if missing)
-- reach: total reach (default 0 if missing)
-- profile_visits: profile visits from this post (default 0 if missing)
-- url_clicks: URL clicks (default 0 if missing)
+The data may arrive as plain text OR as a CSV with headers.
+If it is a CSV, the columns are:
+Content, Type, Posted, Impressions, Reach, Likes, Comments, Shares, Saves, 
+Engagement Rate, Link Clicks, Video Views
+
+Map them as follows:
+- post_title: Content column (truncate to 80 chars if needed)
+- post_type: Type column (Video/Image/Reel/Carousel)
+- date: Posted column
+- likes: Likes column (integer, default 0)
+- comments: Comments column (integer, default 0)
+- shares: Shares column (integer, default 0)
+- saves: Saves column (integer, default 0)
+- reach: Reach column (integer, default 0)
+- impressions: Impressions column (integer, default 0)
+- profile_visits: default 0 unless specified
+- url_clicks: Link Clicks column (integer, default 0)
+- video_views: Video Views column (integer, default 0)
+
+Strip any % signs from Engagement Rate before using it.
+Strip any quotes from Content before using it as post_title.
+If the data is plain text instead of CSV, extract metrics as best you can.
 
 STEP 2 — CALCULATE SCORES
 For each post calculate EXACTLY using this formula:
-impact_score = (saves x 10) + (shares x 5) + (profile_visits x 3) + (comments x 2) + (likes x 1)
+impact_score = (saves x 10) + (shares x 5) + (profile_visits x 3) + (comments x 2) + (likes x 1) + (video_views / 100)
+Round the final score to nearest integer.
+Video views are divided by 100 to normalize them against other metrics.
 Do the math yourself. Do not guess or estimate.
 
 STEP 3 — EFFICIENCY RATING
@@ -308,13 +323,14 @@ Return ONLY valid JSON. No markdown, no backticks, no extra text.
   "business_health": "Good or Needs Attention or Critical",
   "brand_health_score": number,
   "posts": [
-    {
-      "post_title": "string",
-      "post_type": "string",
-      "impact_score": number,
-      "efficiency_rating": "High-Value Content or Low-Efficiency Growth or Average",
-      "top_3_strategic_actions": ["string", "string", "string"]
-    }
+{
+  "post_title": "string",
+  "post_type": "string",
+  "impact_score": number,
+  "video_views": number,
+  "efficiency_rating": "High-Value Content or Low-Efficiency Growth or Average",
+  "top_3_strategic_actions": ["string", "string", "string"]
+}
   ],
   "top_performing_post": "string",
   "worst_performing_post": "string",
@@ -392,194 +408,219 @@ def download_client():
     page_width, page_height = A4
     c = canvas.Canvas(buffer, pagesize=A4)
 
-    BG          = (10/255,  10/255,  10/255)
-    CARD_BG     = (17/255,  17/255,  17/255)
-    CARD_BORDER = (34/255,  34/255,  34/255)
-    CARD_LIGHT  = (40/255,  40/255,  40/255)
+    BG          = (10/255, 10/255, 10/255)
+    CARD_BG     = (17/255, 17/255, 17/255)
+    CARD_BORDER = (30/255, 30/255, 30/255)
     WHITE       = (1, 1, 1)
-    MUTED       = (136/255, 136/255, 136/255)
-    CYAN        = (0/255,  255/255, 255/255)
-    PURPLE      = (191/255,  0/255, 255/255)
-    GREEN       = (74/255,  222/255, 128/255)
-    AMBER       = (251/255, 146/255,  60/255)
+    MUTED       = (110/255, 110/255, 110/255)
+    ACCENT      = (0/255, 255/255, 255/255)
+    GREEN       = (74/255, 222/255, 128/255)
+    AMBER       = (251/255, 146/255, 60/255)
     RED         = (248/255, 113/255, 113/255)
+
+    LEFT  = 2*cm
+    RIGHT = page_width - 2*cm
+    W     = RIGHT - LEFT
 
     def sc(rgb): c.setFillColorRGB(*rgb)
     def ss(rgb): c.setStrokeColorRGB(*rgb)
 
-    def draw_bg():
+    def bg():
         sc(BG)
         c.rect(0, 0, page_width, page_height, fill=1, stroke=0)
 
-    def draw_card(x, y, w, h, bg=CARD_BG, border=CARD_BORDER, radius=8):
-        sc(bg)
+    def hline(y, color=CARD_BORDER, width=0.5):
+        ss(color)
+        c.setLineWidth(width)
+        c.line(LEFT, y, RIGHT, y)
+
+    def card(x, y, w, h, border=CARD_BORDER, radius=6):
+        sc(CARD_BG)
         c.roundRect(x, y, w, h, radius, fill=1, stroke=0)
         ss(border)
         c.setLineWidth(0.5)
         c.roundRect(x, y, w, h, radius, fill=0, stroke=1)
 
-    def draw_line(y, color=PURPLE):
-        ss(color)
-        c.setLineWidth(0.5)
-        c.line(2*cm, y, page_width - 2*cm, y)
-
-    def draw_bar(x, y, w, h, pct, color=CYAN):
-        sc(CARD_LIGHT)
-        c.roundRect(x, y, w, h, 3, fill=1, stroke=0)
-        filled = max(w * min(pct / 100, 1), 0)
-        if filled > 0:
-            sc(color)
-            c.roundRect(x, y, filled, h, 3, fill=1, stroke=0)
-
-    def txt(t, x, y, font="Helvetica", size=11, color=WHITE):
+    def label(text, x, y, color=MUTED):
         sc(color)
-        c.setFont(font, size)
-        c.drawString(x, y, str(t))
+        c.setFont("Helvetica", 7)
+        c.drawString(x, y, text.upper())
 
-    def ctxt(t, y, font="Helvetica", size=11, color=WHITE):
-        sc(color)
-        c.setFont(font, size)
-        c.drawCentredString(page_width / 2, y, str(t))
-
-    def mltxt(t, x, y, font="Helvetica", size=10, color=WHITE, max_w=None):
+    def body(text, x, y, size=9, color=WHITE, max_w=None, font="Helvetica"):
         if max_w is None:
-            max_w = page_width - 4*cm
+            max_w = W
         sc(color)
         c.setFont(font, size)
-        for line in simpleSplit(str(t), font, size, max_w):
+        lines = simpleSplit(str(text), font, size, max_w)
+        for line in lines:
             c.drawString(x, y, line)
-            y -= size * 1.4
+            y -= size * 1.6
         return y
 
-    def chk(y, thr=4*cm):
-        if y < thr:
+    def heading(text, x, y, size=10, color=WHITE):
+        sc(color)
+        c.setFont("Helvetica-Bold", size)
+        c.drawString(x, y, text)
+        return y - size * 1.8
+
+    def section(text, y):
+        hline(y + 8, color=CARD_BORDER)
+        sc(MUTED)
+        c.setFont("Helvetica", 7)
+        c.drawString(LEFT, y, text.upper())
+        return y - 20
+
+    def chk(y, needed=2.5*cm):
+        if y < needed:
             c.showPage()
-            draw_bg()
-            return page_height - 2.5*cm
+            bg()
+            return page_height - 2*cm
         return y
 
-    draw_bg()
-    draw_line(page_height - 1.5*cm, color=CARD_BORDER)
+    bg()
+
+    cur = page_height - 1.6*cm
+    sc(WHITE)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(LEFT, cur, "Performance Report")
+    sc(MUTED)
+    c.setFont("Helvetica", 8)
+    c.drawRightString(RIGHT, cur, datetime.now().strftime("%B %Y"))
+    cur -= 0.35*cm
+    hline(cur)
+    cur -= 0.9*cm
 
     score  = last_report.get("brand_health_score", 0)
     health = last_report.get("business_health", "N/A")
-    cw, ch = 10*cm, 4.2*cm
-    cx = page_width / 2 - cw / 2
-    cy = page_height - 6.8*cm
+    sc_color = GREEN if health == "Good" else (AMBER if health == "Needs Attention" else RED)
 
-    draw_card(cx, cy, cw, ch, bg=CARD_BG, border=CYAN, radius=10)
-    ctxt(str(score), cy + ch - 1.3*cm, font="Helvetica-Bold", size=48, color=CYAN)
-    ctxt("BRAND HEALTH SCORE", cy + 1.3*cm, font="Helvetica-Bold", size=8, color=MUTED)
-    status_color = GREEN if health == "Good" else (AMBER if health == "Needs Attention" else RED)
-    ctxt(f"STATUS: {health.upper()}", cy + 0.5*cm, font="Helvetica-Bold", size=9, color=status_color)
+    card_h = 3*cm
+    card_y = cur - card_h
+    card(LEFT, card_y, W, card_h, border=CARD_BORDER, radius=8)
 
-    cur = cy - 0.8*cm
+    sc(ACCENT)
+    c.setFont("Helvetica-Bold", 48)
+    c.drawCentredString(page_width/2, card_y + card_h - 1.5*cm, str(score))
+
+    sc(MUTED)
+    c.setFont("Helvetica", 7)
+    c.drawCentredString(page_width/2, card_y + 0.85*cm, "BRAND HEALTH SCORE")
+
+    sc(sc_color)
+    c.setFont("Helvetica-Bold", 8)
+    c.drawCentredString(page_width/2, card_y + 0.38*cm, health.upper())
+
+    cur = card_y - 0.9*cm
 
     trend    = last_report.get("trend_analysis", "")
     followup = last_report.get("battle_plan_followup", "")
     if trend and trend != "First report — no trend data yet.":
-        draw_line(cur, color=PURPLE)
-        cur -= 0.7*cm
-        txt("MONTH OVER MONTH", 2*cm, cur, font="Helvetica-Bold", size=12, color=CYAN)
-        cur -= 0.5*cm
-        cur = mltxt(trend, 2*cm, cur, size=10)
+        cur = chk(cur)
+        cur = section("Month over Month", cur)
+        cur = body(trend, LEFT, cur, size=9, color=MUTED, max_w=W)
+        cur -= 4
         if followup and followup != "N/A":
-            cur -= 0.2*cm
-            cur = mltxt(f"Battle Plan Follow-up: {followup}", 2*cm, cur, size=9, color=MUTED)
-        cur -= 0.3*cm
+            cur = body(f"Previous cycle: {followup}", LEFT, cur,
+                       size=8, color=MUTED, max_w=W)
+        cur -= 12
 
-    draw_line(cur, color=PURPLE)
-    cur -= 0.7*cm
-    txt("WHAT WE ACHIEVED THIS MONTH", 2*cm, cur, font="Helvetica-Bold", size=12, color=CYAN)
-    cur -= 0.5*cm
+    cur = chk(cur)
+    cur = section("Overview", cur)
     executive = last_report.get("executive_summary", "")
     if executive:
-        cur = mltxt(executive, 2*cm, cur, size=10)
-    cur -= 0.5*cm
-    cur = chk(cur)
+        cur = body(executive, LEFT, cur, size=9, color=MUTED, max_w=W)
+    cur -= 12
 
     cf = last_report.get("save_to_reach_client_friendly", "")
     if cf:
-        ih  = 1.6*cm
-        iy  = cur - ih
-        draw_card(2*cm, iy, page_width - 4*cm, ih, bg=CARD_BG, border=CYAN, radius=8)
-        txt("AUDIENCE INTEREST", 2.4*cm, iy + ih - 0.55*cm,
-            font="Helvetica-Bold", size=8, color=MUTED)
-        mltxt(cf, 2.4*cm, iy + 0.9*cm, font="Helvetica-Bold",
-              size=10, color=GREEN, max_w=page_width - 5*cm)
-        cur = iy - 0.6*cm
+        cur = chk(cur, 2*cm)
+        lines = simpleSplit(cf, "Helvetica", 9, W - 20)
+        needed_h = max(1.2*cm, len(lines) * 9 * 1.6 + 0.7*cm)
+        cy = cur - needed_h
+        card(LEFT, cy, W, needed_h, border=CARD_BORDER)
+        label("Audience Signal", LEFT + 8, cy + needed_h - 0.38*cm)
+        text_y = cy + needed_h - 0.7*cm
+        sc(WHITE)
+        c.setFont("Helvetica", 9)
+        for line in lines:
+            c.drawString(LEFT + 8, text_y, line)
+            text_y -= 9 * 1.6
+        cur = cy - 0.6*cm
 
     cur = chk(cur)
-    draw_line(cur, color=PURPLE)
-    cur -= 0.7*cm
+    cur = section("Top Performers", cur)
 
     posts     = last_report.get("posts", [])
     top_posts = sorted(posts, key=lambda x: x.get("impact_score", 0), reverse=True)[:3]
     max_sc    = max((p.get("impact_score", 1) for p in top_posts), default=1) or 1
 
-    if top_posts:
-        txt("TOP 3 WINS THIS MONTH", 2*cm, cur, font="Helvetica-Bold", size=12, color=CYAN)
-        cur -= 0.5*cm
-        for i, post in enumerate(top_posts):
-            cur = chk(cur, 3.5*cm)
-            wh  = 2.4*cm
-            wy  = cur - wh
-            draw_card(2*cm, wy, page_width - 4*cm, wh,
-                      bg=CARD_BG, border=CARD_BORDER, radius=8)
-            txt(f"0{i+1}", 2.4*cm, wy + wh - 0.65*cm,
-                font="Helvetica-Bold", size=14, color=PURPLE)
-            txt(post.get("post_title", "")[:52], 3.5*cm, wy + wh - 0.65*cm,
-                font="Helvetica-Bold", size=10)
-            rating = post.get("efficiency_rating", "")
-            rc = GREEN if rating == "High-Value Content" else (
-                RED if rating == "Low-Efficiency Growth" else AMBER)
-            txt(rating.upper(), 3.5*cm, wy + 1.0*cm,
-                font="Helvetica-Bold", size=8, color=rc)
-            sv = post.get("impact_score", 0)
-            draw_bar(3.5*cm, wy + 0.4*cm,
-                     page_width - 4*cm - 1.5*cm - 2.5*cm,
-                     0.22*cm, (sv / max_sc) * 100)
-            txt(f"Score: {sv}", page_width - 4.2*cm, wy + wh - 0.65*cm,
-                font="Helvetica-Bold", size=9, color=CYAN)
-            cur = wy - 0.3*cm
+    for i, post in enumerate(top_posts):
+        cur = chk(cur, 2*cm)
+        row_h = 1.6*cm
+        row_y = cur - row_h
+        card(LEFT, row_y, W, row_h, border=CARD_BORDER)
 
-    cur -= 0.3*cm
+        sc(MUTED)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(LEFT + 10, row_y + row_h - 0.5*cm, f"0{i+1}")
+
+        title_lines = simpleSplit(
+            post.get("post_title", ""), "Helvetica-Bold", 9, W - 90
+        )
+        sc(WHITE)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(LEFT + 28, row_y + row_h - 0.5*cm,
+                     title_lines[0] if title_lines else "")
+
+        sv = post.get("impact_score", 0)
+        sc(ACCENT)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawRightString(RIGHT - 8, row_y + row_h - 0.5*cm, str(sv))
+
+        rating = post.get("efficiency_rating", "")
+        rc = GREEN if rating == "High-Value Content" else (
+            RED if rating == "Low-Efficiency Growth" else AMBER)
+        sc(rc)
+        c.setFont("Helvetica", 7)
+        c.drawString(LEFT + 28, row_y + 0.45*cm, rating)
+
+        bar_w = W - 90
+        sc((30/255, 30/255, 30/255))
+        c.roundRect(LEFT + 28, row_y + 0.2*cm, bar_w, 0.15*cm, 2, fill=1, stroke=0)
+        filled = max(bar_w * min(sv/max_sc, 1), 0)
+        if filled > 0:
+            sc(ACCENT)
+            c.roundRect(LEFT + 28, row_y + 0.2*cm, filled, 0.15*cm, 2, fill=1, stroke=0)
+
+        cur = row_y - 0.3*cm
+
+    cur -= 8
     cur = chk(cur)
-    draw_line(cur, color=PURPLE)
-    cur -= 0.7*cm
+    cur = section("Key Takeaways", cur)
 
-    insights = last_report.get("key_insights", [])
-    if insights:
-        txt("KEY TAKEAWAYS", 2*cm, cur, font="Helvetica-Bold", size=12, color=CYAN)
-        cur -= 0.5*cm
-        for ins in insights:
-            cur = chk(cur, 2*cm)
-            cur = mltxt(f"—  {ins}", 2.3*cm, cur, size=10,
-                        max_w=page_width - 4.5*cm)
-            cur -= 0.2*cm
+    for ins in last_report.get("key_insights", []):
+        cur = chk(cur, 1.5*cm)
+        lines = simpleSplit(f"— {ins}", "Helvetica", 9, W)
+        for line in lines:
+            sc(MUTED)
+            c.setFont("Helvetica", 9)
+            c.drawString(LEFT, cur, line)
+            cur -= 9 * 1.6
+        cur -= 4
 
-    cur -= 0.3*cm
+    cur -= 8
     cur = chk(cur)
-    draw_line(cur, color=PURPLE)
-    cur -= 0.7*cm
-
+    cur = section("Strategic Direction", cur)
     nv = last_report.get("next_month_vision", "")
     if nv:
-        txt("WHAT WE'RE BUILDING TOWARD NEXT MONTH", 2*cm, cur,
-            font="Helvetica-Bold", size=12, color=CYAN)
-        cur -= 0.5*cm
-        mltxt(nv, 2*cm, cur, size=10)
+        cur = body(nv, LEFT, cur, size=9, color=MUTED, max_w=W)
 
     c.save()
     buffer.seek(0)
     cn, mo, yr = get_file_metadata(last_report)
-    return send_file(
-        buffer,
-        as_attachment=True,
-        download_name=f"{cn}_Performance_Report_{mo}_{yr}.pdf",
-        mimetype="application/pdf"
-    )
-
+    return send_file(buffer, as_attachment=True,
+                     download_name=f"{cn}_Performance_Report_{mo}_{yr}.pdf",
+                     mimetype="application/pdf")
 
 @app.route("/download/smm")
 @login_required
@@ -598,162 +639,175 @@ def download_smm():
     page_width, page_height = A4
     c = canvas.Canvas(buffer, pagesize=A4)
 
-    MIDNIGHT    = (18/255,  18/255,  18/255)
-    CARD_BG     = (30/255,  30/255,  30/255)
-    CARD_LIGHT  = (40/255,  40/255,  40/255)
+    BG          = (10/255, 10/255, 10/255)
+    CARD_BG     = (17/255, 17/255, 17/255)
+    CARD_BORDER = (30/255, 30/255, 30/255)
     WHITE       = (1, 1, 1)
-    MUTED       = (160/255, 160/255, 160/255)
-    CYAN        = (0/255,  255/255, 255/255)
-    PURPLE      = (191/255,  0/255, 255/255)
-    GREEN       = (74/255,  222/255, 128/255)
-    AMBER       = (251/255, 146/255,  60/255)
+    MUTED       = (110/255, 110/255, 110/255)
+    ACCENT      = (0/255, 255/255, 255/255)
+    GREEN       = (74/255, 222/255, 128/255)
+    AMBER       = (251/255, 146/255, 60/255)
     RED         = (248/255, 113/255, 113/255)
-    BLUE        = (59/255,  130/255, 246/255)
+    BLUE        = (59/255, 130/255, 246/255)
+
+    LEFT  = 2*cm
+    RIGHT = page_width - 2*cm
+    W     = RIGHT - LEFT
 
     def sc(rgb): c.setFillColorRGB(*rgb)
     def ss(rgb): c.setStrokeColorRGB(*rgb)
 
-    def draw_bg():
-        sc(MIDNIGHT)
+    def bg():
+        sc(BG)
         c.rect(0, 0, page_width, page_height, fill=1, stroke=0)
 
-    def draw_card(x, y, w, h, bg=CARD_BG, border=PURPLE, radius=8):
-        sc(bg)
+    def hline(y, color=CARD_BORDER, width=0.5):
+        ss(color)
+        c.setLineWidth(width)
+        c.line(LEFT, y, RIGHT, y)
+
+    def card(x, y, w, h, border=CARD_BORDER, radius=6):
+        sc(CARD_BG)
         c.roundRect(x, y, w, h, radius, fill=1, stroke=0)
         ss(border)
         c.setLineWidth(0.5)
         c.roundRect(x, y, w, h, radius, fill=0, stroke=1)
 
-    def draw_line(y, color=PURPLE):
-        ss(color)
-        c.setLineWidth(0.5)
-        c.line(2*cm, y, page_width - 2*cm, y)
-
-    def draw_bar(x, y, w, h, pct, color=CYAN):
-        sc(CARD_LIGHT)
-        c.roundRect(x, y, w, h, 3, fill=1, stroke=0)
-        fw = max(w * min(pct / 100, 1), 0)
-        if fw > 0:
-            sc(color)
-            c.roundRect(x, y, fw, h, 3, fill=1, stroke=0)
-
-    def txt(t, x, y, font="Helvetica", size=11, color=WHITE):
+    def body(text, x, y, size=9, color=WHITE, max_w=None, font="Helvetica"):
+        if max_w is None:
+            max_w = W
         sc(color)
         c.setFont(font, size)
-        c.drawString(x, y, str(t))
+        lines = simpleSplit(str(text), font, size, max_w)
+        for line in lines:
+            c.drawString(x, y, line)
+            y -= size * 1.6
+        return y
 
-    def ctxt(t, y, font="Helvetica", size=11, color=WHITE):
-        sc(color)
-        c.setFont(font, size)
-        c.drawCentredString(page_width / 2, y, str(t))
+    def section(text, y):
+        hline(y + 8, color=CARD_BORDER)
+        sc(MUTED)
+        c.setFont("Helvetica", 7)
+        c.drawString(LEFT, y, text.upper())
+        return y - 20
 
-    def chk(y, thr=4*cm):
-        if y < thr:
+    def chk(y, needed=2.5*cm):
+        if y < needed:
             c.showPage()
-            draw_bg()
+            bg()
             draw_header()
-            return page_height - 2.5*cm
+            return page_height - 2*cm
         return y
 
     def draw_header():
-        draw_line(page_height - 1.5*cm)
+        cur = page_height - 1.6*cm
+        sc(WHITE)
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(LEFT, cur, "Strategic Analysis")
+        sc(MUTED)
+        c.setFont("Helvetica", 8)
+        c.drawRightString(RIGHT, cur, datetime.now().strftime("%B %Y"))
+        hline(cur - 0.35*cm)
 
-    draw_bg()
+    bg()
     draw_header()
-
-    ctxt("SMM TACTICAL REPORT", page_height - 2.5*cm,
-         font="Helvetica-Bold", size=20)
-    ctxt("Internal Use Only — Do Not Share With Client",
-         page_height - 3.1*cm, font="Helvetica", size=9, color=RED)
-
-    cur = page_height - 3.8*cm
-    draw_line(cur)
-    cur -= 0.7*cm
+    cur = page_height - 2.5*cm
 
     trend    = last_report.get("trend_analysis", "")
     followup = last_report.get("battle_plan_followup", "")
     if trend and trend != "First report — no trend data yet.":
-        txt("TREND ANALYSIS", 2*cm, cur, font="Helvetica-Bold", size=13, color=CYAN)
-        cur -= 0.5*cm
-        for line in simpleSplit(trend, "Helvetica", 10, page_width - 4*cm):
-            txt(line, 2*cm, cur, size=10)
-            cur -= 0.45*cm
+        cur = section("Trend Analysis", cur)
+        cur = body(trend, LEFT, cur, size=9, color=MUTED, max_w=W)
+        cur -= 4
         if followup and followup != "N/A":
-            cur -= 0.2*cm
-            for line in simpleSplit(
-                f"Battle Plan Check: {followup}", "Helvetica", 9, page_width - 4*cm
-            ):
-                txt(line, 2*cm, cur, size=9, color=MUTED)
-                cur -= 0.4*cm
-        cur -= 0.3*cm
-        draw_line(cur)
-        cur -= 0.7*cm
+            cur = body(f"Previous cycle: {followup}", LEFT, cur,
+                       size=8, color=MUTED, max_w=W)
+        cur -= 16
 
-    txt("THE KILL LIST", 2*cm, cur, font="Helvetica-Bold", size=13, color=RED)
-    txt("Posts to kill or completely rethink", 8*cm, cur,
-        font="Helvetica", size=9, color=MUTED)
-    cur -= 0.5*cm
+    cur = chk(cur)
+    cur = section("Content Review", cur)
 
     for item in last_report.get("kill_list", []):
-        cur = chk(cur, 5*cm)
-        ch_ = 2.8*cm
-        cy_ = cur - ch_
-        draw_card(2*cm, cy_, page_width - 4*cm, ch_, bg=CARD_BG, border=RED, radius=6)
-        sc(RED)
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(2.4*cm, cy_ + ch_ - 0.6*cm, "x")
-        txt(item.get("post_title", "")[:55], 3.0*cm, cy_ + ch_ - 0.6*cm,
-            font="Helvetica-Bold", size=10)
-        ry = cy_ + ch_ - 1.1*cm
-        for line in simpleSplit(
-            f"Why: {item.get('reason', '')}", "Helvetica", 9, page_width - 5.5*cm
-        ):
-            txt(line, 2.4*cm, ry, size=9, color=MUTED)
-            ry -= 0.35*cm
-        ry2 = cy_ + 0.5*cm
-        for line in simpleSplit(
-            f"Replace with: {item.get('replacement', '')}", "Helvetica-Bold", 9,
-            page_width - 5.5*cm
-        ):
-            txt(line, 2.4*cm, ry2, font="Helvetica-Bold", size=9, color=BLUE)
-            ry2 -= 0.35*cm
-        cur = cy_ - 0.4*cm
+        cur = chk(cur, 2.8*cm)
 
-    cur -= 0.3*cm
+        reason      = item.get("reason", "")
+        replacement = item.get("replacement", "")
+        title       = item.get("post_title", "")
+
+        reason_lines      = simpleSplit(f"Analysis: {reason}", "Helvetica", 8, W - 20)
+        replacement_lines = simpleSplit(f"Recommendation: {replacement}", "Helvetica", 8, W - 20)
+        title_lines       = simpleSplit(title, "Helvetica-Bold", 9, W - 20)
+
+        needed_h = (
+            0.5*cm +
+            len(title_lines) * 9 * 1.6 +
+            len(reason_lines) * 8 * 1.6 +
+            len(replacement_lines) * 8 * 1.6 +
+            0.3*cm
+        )
+
+        cy = cur - needed_h
+        card(LEFT, cy, W, needed_h, border=CARD_BORDER)
+
+        text_y = cy + needed_h - 0.5*cm
+
+        sc(WHITE)
+        c.setFont("Helvetica-Bold", 9)
+        for line in title_lines:
+            c.drawString(LEFT + 10, text_y, line)
+            text_y -= 9 * 1.6
+
+        text_y -= 4
+        sc(MUTED)
+        c.setFont("Helvetica", 8)
+        for line in reason_lines:
+            c.drawString(LEFT + 10, text_y, line)
+            text_y -= 8 * 1.6
+
+        text_y -= 4
+        sc(BLUE)
+        c.setFont("Helvetica", 8)
+        for line in replacement_lines:
+            c.drawString(LEFT + 10, text_y, line)
+            text_y -= 8 * 1.6
+
+        cur = cy - 0.4*cm
+
+    cur -= 8
     cur = chk(cur)
-    draw_line(cur)
-    cur -= 0.7*cm
+    cur = section("Format Performance", cur)
 
-    txt("FORMAT VELOCITY", 2*cm, cur, font="Helvetica-Bold", size=13, color=CYAN)
-    cur -= 0.5*cm
-    for line in simpleSplit(
-        last_report.get("format_velocity", ""), "Helvetica", 10, page_width - 4*cm
-    ):
-        txt(line, 2*cm, cur, size=10)
-        cur -= 0.45*cm
+    fv = last_report.get("format_velocity", "")
+    if fv:
+        cur = body(fv, LEFT, cur, size=9, color=MUTED, max_w=W)
+    cur -= 12
 
-    cur -= 0.5*cm
     cur = chk(cur)
-    draw_line(cur)
-    cur -= 0.7*cm
+    cur = section("Engagement Depth", cur)
 
-    txt("SAVE-TO-REACH RATIO", 2*cm, cur, font="Helvetica-Bold", size=13, color=CYAN)
-    cur -= 0.5*cm
-    rh  = 1.8*cm
-    ry_ = cur - rh
-    draw_card(2*cm, ry_, page_width - 4*cm, rh, bg=CARD_BG, border=CYAN, radius=6)
-    txt(f"Technical: {last_report.get('save_to_reach_ratio', 'N/A')}",
-        2.4*cm, ry_ + rh - 0.6*cm, font="Helvetica-Bold", size=10, color=CYAN)
-    txt(f"Meaning: {last_report.get('save_to_reach_client_friendly', '')}",
-        2.4*cm, ry_ + 0.5*cm, size=9, color=MUTED)
-    cur = ry_ - 0.7*cm
+    cf      = last_report.get("save_to_reach_client_friendly", "")
+    ratio   = last_report.get("save_to_reach_ratio", "N/A")
+    cf_lines    = simpleSplit(cf, "Helvetica", 8, W - 100) if cf else []
+    needed_h = max(1.2*cm, len(cf_lines) * 8 * 1.6 + 0.7*cm)
+
+    ratio_y = cur - needed_h
+    card(LEFT, ratio_y, W, needed_h, border=CARD_BORDER)
+
+    sc(ACCENT)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(LEFT + 10, ratio_y + needed_h - 0.45*cm, ratio)
+
+    text_y = ratio_y + needed_h - 0.75*cm
+    sc(MUTED)
+    c.setFont("Helvetica", 8)
+    for line in cf_lines:
+        c.drawString(LEFT + 10, text_y, line)
+        text_y -= 8 * 1.6
+
+    cur = ratio_y - 0.7*cm
+
     cur = chk(cur)
-    draw_line(cur)
-    cur -= 0.7*cm
-
-    txt("POST PERFORMANCE BREAKDOWN", 2*cm, cur,
-        font="Helvetica-Bold", size=13, color=CYAN)
-    cur -= 0.6*cm
+    cur = section("Post Performance Index", cur)
 
     sorted_posts = sorted(
         last_report.get("posts", []),
@@ -762,81 +816,102 @@ def download_smm():
     )
     max_sv = max((p.get("impact_score", 1) for p in sorted_posts), default=1) or 1
 
-    hh = 0.55*cm
+    hh = 0.5*cm
     hy = cur - hh
-    draw_card(2*cm, hy, page_width - 4*cm, hh, bg=CARD_LIGHT, border=PURPLE, radius=4)
-    txt("POST",   2.3*cm,           hy + 0.15*cm, font="Helvetica-Bold", size=8, color=PURPLE)
-    txt("SCORE",  page_width-6.5*cm, hy + 0.15*cm, font="Helvetica-Bold", size=8, color=PURPLE)
-    txt("RATING", page_width-4.8*cm, hy + 0.15*cm, font="Helvetica-Bold", size=8, color=PURPLE)
-    cur = hy - 0.2*cm
+    card(LEFT, hy, W, hh, border=CARD_BORDER, radius=4)
+    sc(MUTED)
+    c.setFont("Helvetica", 7)
+    c.drawString(LEFT + 8, hy + 0.17*cm, "POST")
+    c.drawString(RIGHT - 5.5*cm, hy + 0.17*cm, "SCORE")
+    c.drawString(RIGHT - 3.5*cm, hy + 0.17*cm, "RATING")
+    cur = hy - 0.15*cm
 
     for i, post in enumerate(sorted_posts):
-        cur = chk(cur, 3*cm)
-        rh_ = 0.9*cm
-        ry2 = cur - rh_
-        rbg = CARD_BG if i % 2 == 0 else (25/255, 25/255, 25/255)
-        draw_card(2*cm, ry2, page_width - 4*cm, rh_, bg=rbg, border=PURPLE, radius=4)
-        txt(post.get("post_title", "")[:38], 2.3*cm, ry2 + 0.32*cm, size=8)
+        cur = chk(cur, 1.2*cm)
+        rh  = 0.7*cm
+        ry  = cur - rh
+        rbg = CARD_BG if i % 2 == 0 else (14/255, 14/255, 14/255)
+        sc(rbg)
+        c.roundRect(LEFT, ry, W, rh, 3, fill=1, stroke=0)
+        ss(CARD_BORDER)
+        c.setLineWidth(0.5)
+        c.roundRect(LEFT, ry, W, rh, 3, fill=0, stroke=1)
+
+        title_l = simpleSplit(
+            post.get("post_title", ""), "Helvetica", 8, W - 5.8*cm - 16
+        )
+        sc(WHITE)
+        c.setFont("Helvetica", 8)
+        c.drawString(LEFT + 8, ry + 0.25*cm,
+                     title_l[0] if title_l else "")
+
         sv_ = post.get("impact_score", 0)
-        draw_bar(page_width-7.5*cm, ry2+0.3*cm, 2.5*cm, 0.25*cm, (sv_/max_sv)*100)
-        txt(str(sv_), page_width-6.4*cm, ry2+0.32*cm,
-            font="Helvetica-Bold", size=8, color=CYAN)
+        sc((30/255, 30/255, 30/255))
+        c.roundRect(RIGHT - 5.5*cm, ry + 0.22*cm, 1.2*cm, 0.18*cm,
+                    2, fill=1, stroke=0)
+        filled = max(1.2*cm * min(sv_/max_sv, 1), 0)
+        if filled > 0:
+            sc(ACCENT)
+            c.roundRect(RIGHT - 5.5*cm, ry + 0.22*cm, filled, 0.18*cm,
+                        2, fill=1, stroke=0)
+        sc(WHITE)
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(RIGHT - 5.5*cm + 1.3*cm, ry + 0.25*cm, str(sv_))
+
         rating = post.get("efficiency_rating", "")
         rc = GREEN if rating == "High-Value Content" else (
             RED if rating == "Low-Efficiency Growth" else AMBER)
-        txt(rating[:18], page_width-4.8*cm, ry2+0.32*cm,
-            font="Helvetica-Bold", size=7, color=rc)
-        cur = ry2 - 0.15*cm
+        sc(rc)
+        c.setFont("Helvetica", 7)
+        c.drawString(RIGHT - 3.5*cm, ry + 0.25*cm, rating[:20])
+        cur = ry - 0.12*cm
 
-    cur -= 0.5*cm
+    cur -= 12
     cur = chk(cur)
-    draw_line(cur)
-    cur -= 0.7*cm
-
-    txt("4-WEEK BATTLE PLAN", 2*cm, cur, font="Helvetica-Bold", size=13, color=CYAN)
-    cur -= 0.5*cm
-    week_colors = [CYAN, PURPLE, GREEN, AMBER]
+    cur = section("Strategic Recommendations", cur)
 
     for i, action in enumerate(last_report.get("battle_plan", [])):
-        cur = chk(cur, 3*cm)
-        wch = 1.4*cm
-        wcy = cur - wch
-        wc  = week_colors[i % 4]
-        draw_card(2*cm, wcy, page_width - 4*cm, wch, bg=CARD_BG, border=wc, radius=6)
-        txt(f"WEEK {i+1}", 2.4*cm, wcy + wch - 0.55*cm,
-            font="Helvetica-Bold", size=8, color=wc)
-        ay = wcy + wch - 0.55*cm
-        for line in simpleSplit(action, "Helvetica", 9, page_width - 6.5*cm):
-            txt(line, 4.2*cm, ay, size=9)
-            ay -= 0.38*cm
-        cur = wcy - 0.3*cm
+        cur = chk(cur, 1.8*cm)
 
-    cur -= 0.3*cm
+        action_lines = simpleSplit(action, "Helvetica", 9, W - 45)
+        needed_h     = max(1.1*cm, len(action_lines) * 9 * 1.6 + 0.4*cm)
+        wcy          = cur - needed_h
+        card(LEFT, wcy, W, needed_h, border=CARD_BORDER)
+
+        sc(MUTED)
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(LEFT + 10, wcy + needed_h - 0.42*cm, f"0{i+1}")
+
+        ay = wcy + needed_h - 0.42*cm
+        sc(WHITE)
+        c.setFont("Helvetica", 9)
+        for line in action_lines:
+            c.drawString(LEFT + 30, ay, line)
+            ay -= 9 * 1.6
+
+        cur = wcy - 0.25*cm
+
+    cur -= 8
     cur = chk(cur)
-    draw_line(cur)
-    cur -= 0.7*cm
-
-    txt("OVERALL RECOMMENDATIONS", 2*cm, cur,
-        font="Helvetica-Bold", size=13, color=CYAN)
-    cur -= 0.5*cm
+    cur = section("Overall Recommendations", cur)
 
     for rec in last_report.get("overall_recommendations", []):
-        cur = chk(cur, 2*cm)
-        for line in simpleSplit(
-            f"->  {rec}", "Helvetica", 10, page_width - 4.5*cm
-        ):
-            txt(line, 2.3*cm, cur, size=10)
-            cur -= 0.45*cm
-        cur -= 0.2*cm
+        cur = chk(cur, 1.2*cm)
+        lines = simpleSplit(f"— {rec}", "Helvetica", 9, W)
+        for line in lines:
+            sc(MUTED)
+            c.setFont("Helvetica", 9)
+            c.drawString(LEFT, cur, line)
+            cur -= 9 * 1.6
+        cur -= 6
 
     c.save()
     buffer.seek(0)
-
     cn, mo, yr = get_file_metadata(last_report)
     return send_file(
         buffer,
         as_attachment=True,
-        download_name=f"{cn}_SMM_Tactical_{mo}_{yr}.pdf",
+        download_name=f"{cn}_Strategic_Analysis_{mo}_{yr}.pdf",
         mimetype="application/pdf"
     )
 
