@@ -15,7 +15,6 @@ from auth import (
     init_db, create_user, authenticate_user,
     get_user_by_id, save_report_to_db, get_reports_from_db
 )
-from instagram import fetch_instagram_data, format_for_reportly
 
 load_dotenv()
 
