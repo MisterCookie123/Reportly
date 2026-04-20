@@ -15,10 +15,12 @@
             <button onclick="logout()" class="logout-btn">Log out</button>
         </nav>
 
+        <div id="trial-banner" class="trial-banner" style="display:none"></div>
+
         <div class="hero">
             <div class="hero-badge">AI-Powered Reporting</div>
             <h1 class="hero-title">Stop wasting hours<br>on client reports.</h1>
-            <p class="hero-subtitle">Paste your raw social media data. Get a full strategic report with impact scores, efficiency ratings, and a 4-week battle plan — in seconds.</p>
+            <p class="hero-subtitle">Paste your raw social media data. Get a full strategic report with impact scores, efficiency ratings, and actionable recommendations — in seconds.</p>
 
             <div class="hero-stats">
                 <div class="stat">
@@ -49,15 +51,15 @@
             <div class="feature-card">
                 <div class="feature-icon purple">02</div>
                 <div class="feature-text">
-                    <h3>Kill List</h3>
-                    <p>Identifies your worst posts and tells you exactly what to replace them with.</p>
+                    <h3>Content Review</h3>
+                    <p>Identifies underperforming content and provides specific data-driven replacement recommendations.</p>
                 </div>
             </div>
             <div class="feature-card">
                 <div class="feature-icon green">03</div>
                 <div class="feature-text">
                     <h3>Dual PDF Export</h3>
-                    <p>One premium report for your client. One tactical brief for you. Same data, two audiences.</p>
+                    <p>One performance report for your client. One strategic analysis for you. Same data, two audiences.</p>
                 </div>
             </div>
         </div>
@@ -65,16 +67,14 @@
         <div class="input-section">
             <div class="input-header">
                 <h2>Generate Your Report</h2>
-                <span class="input-hint">Paste anything — CSV exports, platform data, messy notes</span>
+                <span class="input-hint">Paste CSV exports, platform data, or plain text</span>
             </div>
             <textarea id="dataInput" placeholder="Paste your social media data here...
 
-Example:
-Post: Behind the scenes reel
-Likes: 890, Comments: 67, Shares: 234, Saves: 445, Reach: 11200
-
-Post: Promotional graphic
-Likes: 87, Comments: 4, Shares: 12, Saves: 8, Reach: 8900"></textarea>
+Example CSV format:
+Content,Type,Likes,Comments,Shares,Saves,Reach
+Behind the scenes reel,Video,890,67,234,445,11200
+Promotional graphic,Image,87,4,12,8,8900"></textarea>
             <button id="generateBtn" onclick="generateReport()">
                 Generate Report
             </button>
@@ -110,10 +110,10 @@ Likes: 87, Comments: 4, Shares: 12, Saves: 8, Reach: 8900"></textarea>
             <div class="button-group">
                 <button onclick="copyReport()" class="copy-btn">Copy Report</button>
                 <button onclick="downloadPDF('client')" class="client-btn">
-                    Download Client Report PDF
+                    Download Client Report
                 </button>
                 <button onclick="downloadPDF('smm')" class="smm-btn">
-                    Download SMM Report PDF
+                    Download Strategic Analysis
                 </button>
             </div>
 

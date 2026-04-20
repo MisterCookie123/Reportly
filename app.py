@@ -13,18 +13,21 @@ from datetime import datetime
 
 from auth import (
     init_db, create_user, authenticate_user,
-    get_user_by_id, save_report_to_db, get_reports_from_db
+    get_user_by_id, save_report_to_db, get_reports_from_db,
+    save_instagram_token, get_instagram_token,
+    get_user_report_count, activate_user,
+    deactivate_user, get_subscription_status
 )
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", os.urandom(24))
-
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 init_db()
 
+FREE_LIMIT = 3
 current_report_store = {}
 
 
@@ -33,7 +36,7 @@ def login_required(f):
     def decorated(*args, **kwargs):
         if "user_id" not in session:
             if request.is_json or request.path.startswith(
-                ("/generate", "/download", "/fetch-instagram", "/history")
+                ("/generate", "/download", "/fetch-instagram", "/history", "/trial")
             ):
                 return jsonify({"error": "Authentication required."}), 401
             return redirect(url_for("login_page"))
@@ -67,10 +70,23 @@ def get_history(user_id: str) -> list:
     return get_reports_from_db(user_id, limit=6)
 
 
+def is_subscription_active(user_id: str) -> bool:
+    sub = get_subscription_status(user_id)
+    if sub["status"] != "active":
+        return False
+    if sub["expires"]:
+        try:
+            if datetime.utcnow() > datetime.fromisoformat(sub["expires"]):
+                deactivate_user(user_id)
+                return False
+        except Exception:
+            pass
+    return True
+
+
 def calculate_format_velocity(posts):
     if not posts:
-        return "Not enough data to determine format velocity."
-
+        return "Insufficient data to determine format performance."
     type_scores = {}
     type_counts = {}
     for post in posts:
@@ -78,10 +94,8 @@ def calculate_format_velocity(posts):
         score = post.get("impact_score", 0)
         type_scores[ptype] = type_scores.get(ptype, 0) + score
         type_counts[ptype] = type_counts.get(ptype, 0) + 1
-
     if not type_scores:
-        return "Not enough data to determine format velocity."
-
+        return "Insufficient data to determine format performance."
     averages = {
         ptype: round(type_scores[ptype] / type_counts[ptype])
         for ptype in type_scores
@@ -92,13 +106,12 @@ def calculate_format_velocity(posts):
         f"{pt}s avg {avg} pts ({type_counts[pt]} posts)"
         for pt, avg in sorted(averages.items(), key=lambda x: x[1], reverse=True)
     ]
-
     if len(averages) == 1:
         return (
-            f"{best_type}s are the only format used this month — "
-            f"avg impact score {best_avg}. Test a second format next month."
+            f"{best_type}s are the only format used this period — "
+            f"avg impact score {best_avg}. "
+            f"Testing a second format is recommended."
         )
-
     second_type = sorted(averages, key=averages.get, reverse=True)[1]
     second_avg  = averages[second_type]
     delta = best_avg - second_avg
@@ -106,7 +119,7 @@ def calculate_format_velocity(posts):
     return (
         f"{best_type}s are outperforming {second_type}s by {pct}% "
         f"({best_avg} vs {second_avg} avg impact score). "
-        f"Full breakdown: {' · '.join(comparisons)}."
+        f"Breakdown: {' · '.join(comparisons)}."
     )
 
 
@@ -147,10 +160,33 @@ def build_history_context(history):
         lines.append("")
     lines.append(
         "Use this history to identify trends and check if the previous "
-        "battle plan appears to have been followed.\n"
+        "recommendations appear to have been followed.\n"
     )
     return "\n".join(lines)
 
+
+def get_file_metadata(report):
+    client_name = "Client"
+    import re
+    for text in [report.get("overall_summary", ""),
+                 report.get("executive_summary", "")]:
+        for pattern in [
+            r"for ([A-Z][a-zA-Z\s]+(?:Agency|Studio|Brand|Media|Marketing|Co|Inc|Ltd)?)",
+            r"([A-Z][a-zA-Z\s]+(?:Agency|Studio|Brand|Media|Marketing))",
+        ]:
+            match = re.search(pattern, text)
+            if match:
+                found = match.group(1).strip()
+                if 2 < len(found) < 40:
+                    client_name = found.replace(" ", "_")
+                    break
+        if client_name != "Client":
+            break
+    now = datetime.now()
+    return client_name, now.strftime("%B"), now.strftime("%Y")
+
+
+# ── Auth routes ───────────────────────────────────────────────────────────────
 
 @app.route("/login")
 def login_page():
@@ -164,17 +200,14 @@ def signup():
     data     = request.json or {}
     email    = data.get("email", "").strip()
     password = data.get("password", "")
-
     success, msg = create_user(email, password)
     if not success:
         return jsonify({"error": msg}), 400
-
     ok, user = authenticate_user(email, password)
     if ok:
         session["user_id"]    = user["id"]
         session["user_email"] = user["email"]
         session.permanent     = True
-
     return jsonify({"message": msg}), 201
 
 
@@ -183,15 +216,12 @@ def login():
     data     = request.json or {}
     email    = data.get("email", "").strip()
     password = data.get("password", "")
-
     ok, user = authenticate_user(email, password)
     if not ok:
         return jsonify({"error": "Incorrect email or password."}), 401
-
     session["user_id"]    = user["id"]
     session["user_email"] = user["email"]
     session.permanent     = True
-
     return jsonify({"message": "Logged in successfully."}), 200
 
 
@@ -214,6 +244,52 @@ def me():
     })
 
 
+# ── Trial status ──────────────────────────────────────────────────────────────
+
+@app.route("/trial/status")
+@login_required
+def trial_status():
+    user_id   = session["user_id"]
+    sub       = get_subscription_status(user_id)
+    count     = get_user_report_count(user_id)
+    active    = is_subscription_active(user_id)
+    return jsonify({
+        "is_active":    active,
+        "reports_used": count,
+        "free_limit":   FREE_LIMIT,
+        "reports_left": max(FREE_LIMIT - count, 0) if not active else None,
+        "expires":      sub["expires"]
+    })
+
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+
+@app.route("/admin/activate", methods=["POST"])
+def admin_activate():
+    admin_key = request.json.get("admin_key", "")
+    if admin_key != os.getenv("ADMIN_KEY", ""):
+        return jsonify({"error": "Unauthorized"}), 401
+    user_email = request.json.get("email", "").strip()
+    days       = request.json.get("days", 30)
+    import auth as auth_module
+    conn = auth_module.get_db()
+    try:
+        user = conn.execute(
+            "SELECT id FROM users WHERE email = ?",
+            (user_email.lower(),)
+        ).fetchone()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        activate_user(user["id"], days)
+        return jsonify({
+            "message": f"User {user_email} activated for {days} days."
+        })
+    finally:
+        conn.close()
+
+
+# ── Main app routes ───────────────────────────────────────────────────────────
+
 @app.route("/")
 @login_required
 def index():
@@ -225,6 +301,17 @@ def index():
 def generate():
     user_id = session["user_id"]
     body    = request.json or {}
+
+    active = is_subscription_active(user_id)
+    count  = get_user_report_count(user_id)
+
+    if not active and count >= FREE_LIMIT:
+        return jsonify({
+            "error":         "trial_expired",
+            "message":       f"You have used all {FREE_LIMIT} free reports. Upgrade to continue.",
+            "reports_used":  count,
+            "free_limit":    FREE_LIMIT
+        }), 402
 
     raw_posts = body.get("posts")
     raw_text  = body.get("data", "")
@@ -252,7 +339,7 @@ def generate():
 STEP 1 — EXTRACT METRICS
 The data may arrive as plain text OR as a CSV with headers.
 If it is a CSV, the columns are:
-Content, Type, Posted, Impressions, Reach, Likes, Comments, Shares, Saves, 
+Content, Type, Posted, Impressions, Reach, Likes, Comments, Shares, Saves,
 Engagement Rate, Link Clicks, Video Views
 
 Map them as follows:
@@ -271,13 +358,12 @@ Map them as follows:
 
 Strip any % signs from Engagement Rate before using it.
 Strip any quotes from Content before using it as post_title.
-If the data is plain text instead of CSV, extract metrics as best you can.
+If the data is plain text instead of CSV extract metrics as best you can.
 
 STEP 2 — CALCULATE SCORES
 For each post calculate EXACTLY using this formula:
 impact_score = (saves x 10) + (shares x 5) + (profile_visits x 3) + (comments x 2) + (likes x 1) + (video_views / 100)
-Round the final score to nearest integer.
-Video views are divided by 100 to normalize them against other metrics.
+Round the final score to the nearest integer.
 Do the math yourself. Do not guess or estimate.
 
 STEP 3 — EFFICIENCY RATING
@@ -288,30 +374,34 @@ Otherwise → efficiency_rating = "Average"
 
 STEP 4 — STRATEGIC ACTIONS PER POST
 For each post assign exactly 3 actions based on these rules:
-- If saves > 100 → "Create a 3-part series on this topic"
-- If url_clicks = 0 AND (likes + shares + comments) > 100 → "Add a strong Call-to-Action (CTA) to drive link clicks"
-- If impact_score > 1000 → "Boost this post with paid budget — it has proven organic traction"
-- If impact_score < 100 AND reach > 500 → "Rethink content format — high reach but low engagement signals wrong content type"
-- If shares > saves → "Optimize for saves not shares — saves indicate purchase intent"
-- Default if no rules match → "Test a different content format for this topic"
+- If saves > 100 → "Evidence suggests creating a series on this topic"
+- If url_clicks = 0 AND (likes + shares + comments) > 100 → "Consider strengthening the Call-to-Action to drive link clicks"
+- If impact_score > 1000 → "Strong candidate for paid amplification given proven organic traction"
+- If impact_score < 100 AND reach > 500 → "Data suggests reconsidering the content format — reach is strong but engagement is not converting"
+- If shares > saves → "Consider optimising for saves rather than shares — saves indicate stronger purchase intent"
+- Default if no rules match → "Recommend testing an alternative content format for this topic"
 
 STEP 5 — OVERALL ANALYSIS
 - top_performing_post: post with highest impact_score
 - worst_performing_post: post with lowest impact_score
 - business_health: "Good" / "Needs Attention" / "Critical"
 - overall_summary: 2-3 sentences in plain language for a business owner
-- executive_summary: 3 sentences of CEO-speak explaining ROI and value delivered
-- next_month_vision: one high level goal for next month
+- executive_summary: 3 sentences explaining performance and value delivered professionally
+- next_month_vision: one strategic direction for next period. Use language like "The data points toward..." or "Performance indicators suggest..."
 - key_insights: exactly 3 insights based on actual numbers
-- overall_recommendations: exactly 3 recommendations based on patterns
-- kill_list: the 2 worst performing posts with reason and replacement suggestion
+- overall_recommendations: exactly 3 professional recommendations
+- kill_list: the 2 worst performing posts. Use professional language:
+  reason: data-driven analysis of why it underperformed
+  replacement: "Evidence suggests replacing with..." or "Consider retiring this format in favour of..."
 - format_velocity: SET TO THE STRING "CALCULATED"
 - save_to_reach_ratio: calculate as a percentage string
 - save_to_reach_client_friendly: plain business language interpretation
-- battle_plan: exactly 4 bullet points for the next 30 days
+- battle_plan: exactly 4 strategic recommendations for the next 30 days.
+  Use professional language: "We recommend...", "Consider testing...", "Strong evidence suggests..."
+  Never use commanding language. Make the analyst feel like a senior strategist.
 - brand_health_score: single number 0-100
-- trend_analysis: if previous history provided, 2 sentences comparing this vs last month. Otherwise "First report — no trend data yet."
-- battle_plan_followup: if previous battle plan exists, 1 sentence assessing if it was followed. Otherwise "N/A"
+- trend_analysis: if previous history provided, 2 sentences comparing this vs last period. Otherwise "First report — no prior data available."
+- battle_plan_followup: if previous recommendations exist, 1 sentence assessing whether they appear to have been implemented. Otherwise "N/A"
 
 STEP 6 — OUTPUT
 Return ONLY valid JSON. No markdown, no backticks, no extra text.
@@ -323,14 +413,14 @@ Return ONLY valid JSON. No markdown, no backticks, no extra text.
   "business_health": "Good or Needs Attention or Critical",
   "brand_health_score": number,
   "posts": [
-{
-  "post_title": "string",
-  "post_type": "string",
-  "impact_score": number,
-  "video_views": number,
-  "efficiency_rating": "High-Value Content or Low-Efficiency Growth or Average",
-  "top_3_strategic_actions": ["string", "string", "string"]
-}
+    {
+      "post_title": "string",
+      "post_type": "string",
+      "impact_score": number,
+      "video_views": number,
+      "efficiency_rating": "High-Value Content or Low-Efficiency Growth or Average",
+      "top_3_strategic_actions": ["string", "string", "string"]
+    }
   ],
   "top_performing_post": "string",
   "worst_performing_post": "string",
@@ -371,25 +461,7 @@ Return ONLY valid JSON. No markdown, no backticks, no extra text.
     return jsonify({"report": report})
 
 
-def get_file_metadata(report):
-    client_name = "Client"
-    import re
-    for text in [report.get("overall_summary", ""), report.get("executive_summary", "")]:
-        for pattern in [
-            r"for ([A-Z][a-zA-Z\s]+(?:Agency|Studio|Brand|Media|Marketing|Co|Inc|Ltd)?)",
-            r"([A-Z][a-zA-Z\s]+(?:Agency|Studio|Brand|Media|Marketing))",
-        ]:
-            match = re.search(pattern, text)
-            if match:
-                found = match.group(1).strip()
-                if 2 < len(found) < 40:
-                    client_name = found.replace(" ", "_")
-                    break
-        if client_name != "Client":
-            break
-    now = datetime.now()
-    return client_name, now.strftime("%B"), now.strftime("%Y")
-
+# ── PDF helpers ───────────────────────────────────────────────────────────────
 
 @app.route("/download/client")
 @login_required
@@ -441,11 +513,6 @@ def download_client():
         c.setLineWidth(0.5)
         c.roundRect(x, y, w, h, radius, fill=0, stroke=1)
 
-    def label(text, x, y, color=MUTED):
-        sc(color)
-        c.setFont("Helvetica", 7)
-        c.drawString(x, y, text.upper())
-
     def body(text, x, y, size=9, color=WHITE, max_w=None, font="Helvetica"):
         if max_w is None:
             max_w = W
@@ -456,12 +523,6 @@ def download_client():
             c.drawString(x, y, line)
             y -= size * 1.6
         return y
-
-    def heading(text, x, y, size=10, color=WHITE):
-        sc(color)
-        c.setFont("Helvetica-Bold", size)
-        c.drawString(x, y, text)
-        return y - size * 1.8
 
     def section(text, y):
         hline(y + 8, color=CARD_BORDER)
@@ -490,9 +551,10 @@ def download_client():
     hline(cur)
     cur -= 0.9*cm
 
-    score  = last_report.get("brand_health_score", 0)
-    health = last_report.get("business_health", "N/A")
-    sc_color = GREEN if health == "Good" else (AMBER if health == "Needs Attention" else RED)
+    score    = last_report.get("brand_health_score", 0)
+    health   = last_report.get("business_health", "N/A")
+    sc_color = GREEN if health == "Good" else (
+        AMBER if health == "Needs Attention" else RED)
 
     card_h = 3*cm
     card_y = cur - card_h
@@ -514,7 +576,7 @@ def download_client():
 
     trend    = last_report.get("trend_analysis", "")
     followup = last_report.get("battle_plan_followup", "")
-    if trend and trend != "First report — no trend data yet.":
+    if trend and trend != "First report — no prior data available.":
         cur = chk(cur)
         cur = section("Month over Month", cur)
         cur = body(trend, LEFT, cur, size=9, color=MUTED, max_w=W)
@@ -534,11 +596,13 @@ def download_client():
     cf = last_report.get("save_to_reach_client_friendly", "")
     if cf:
         cur = chk(cur, 2*cm)
-        lines = simpleSplit(cf, "Helvetica", 9, W - 20)
+        lines    = simpleSplit(cf, "Helvetica", 9, W - 20)
         needed_h = max(1.2*cm, len(lines) * 9 * 1.6 + 0.7*cm)
-        cy = cur - needed_h
+        cy       = cur - needed_h
         card(LEFT, cy, W, needed_h, border=CARD_BORDER)
-        label("Audience Signal", LEFT + 8, cy + needed_h - 0.38*cm)
+        sc(MUTED)
+        c.setFont("Helvetica", 7)
+        c.drawString(LEFT + 8, cy + needed_h - 0.38*cm, "AUDIENCE SIGNAL")
         text_y = cy + needed_h - 0.7*cm
         sc(WHITE)
         c.setFont("Helvetica", 9)
@@ -551,11 +615,13 @@ def download_client():
     cur = section("Top Performers", cur)
 
     posts     = last_report.get("posts", [])
-    top_posts = sorted(posts, key=lambda x: x.get("impact_score", 0), reverse=True)[:3]
-    max_sc    = max((p.get("impact_score", 1) for p in top_posts), default=1) or 1
+    top_posts = sorted(
+        posts, key=lambda x: x.get("impact_score", 0), reverse=True
+    )[:3]
+    max_sc = max((p.get("impact_score", 1) for p in top_posts), default=1) or 1
 
     for i, post in enumerate(top_posts):
-        cur = chk(cur, 2*cm)
+        cur   = chk(cur, 2*cm)
         row_h = 1.6*cm
         row_y = cur - row_h
         card(LEFT, row_y, W, row_h, border=CARD_BORDER)
@@ -584,19 +650,20 @@ def download_client():
         c.setFont("Helvetica", 7)
         c.drawString(LEFT + 28, row_y + 0.45*cm, rating)
 
-        bar_w = W - 90
+        bar_w  = W - 90
         sc((30/255, 30/255, 30/255))
-        c.roundRect(LEFT + 28, row_y + 0.2*cm, bar_w, 0.15*cm, 2, fill=1, stroke=0)
+        c.roundRect(LEFT + 28, row_y + 0.2*cm, bar_w, 0.15*cm,
+                    2, fill=1, stroke=0)
         filled = max(bar_w * min(sv/max_sc, 1), 0)
         if filled > 0:
             sc(ACCENT)
-            c.roundRect(LEFT + 28, row_y + 0.2*cm, filled, 0.15*cm, 2, fill=1, stroke=0)
-
+            c.roundRect(LEFT + 28, row_y + 0.2*cm, filled, 0.15*cm,
+                        2, fill=1, stroke=0)
         cur = row_y - 0.3*cm
 
     cur -= 8
-    cur = chk(cur)
-    cur = section("Key Takeaways", cur)
+    cur  = chk(cur)
+    cur  = section("Key Takeaways", cur)
 
     for ins in last_report.get("key_insights", []):
         cur = chk(cur, 1.5*cm)
@@ -609,18 +676,22 @@ def download_client():
         cur -= 4
 
     cur -= 8
-    cur = chk(cur)
-    cur = section("Strategic Direction", cur)
-    nv = last_report.get("next_month_vision", "")
+    cur  = chk(cur)
+    cur  = section("Strategic Direction", cur)
+    nv   = last_report.get("next_month_vision", "")
     if nv:
         cur = body(nv, LEFT, cur, size=9, color=MUTED, max_w=W)
 
     c.save()
     buffer.seek(0)
     cn, mo, yr = get_file_metadata(last_report)
-    return send_file(buffer, as_attachment=True,
-                     download_name=f"{cn}_Performance_Report_{mo}_{yr}.pdf",
-                     mimetype="application/pdf")
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f"{cn}_Performance_Report_{mo}_{yr}.pdf",
+        mimetype="application/pdf"
+    )
+
 
 @app.route("/download/smm")
 @login_required
@@ -700,14 +771,14 @@ def download_smm():
         return y
 
     def draw_header():
-        cur = page_height - 1.6*cm
+        y = page_height - 1.6*cm
         sc(WHITE)
         c.setFont("Helvetica-Bold", 12)
-        c.drawString(LEFT, cur, "Strategic Analysis")
+        c.drawString(LEFT, y, "Strategic Analysis")
         sc(MUTED)
         c.setFont("Helvetica", 8)
-        c.drawRightString(RIGHT, cur, datetime.now().strftime("%B %Y"))
-        hline(cur - 0.35*cm)
+        c.drawRightString(RIGHT, y, datetime.now().strftime("%B %Y"))
+        hline(y - 0.35*cm)
 
     bg()
     draw_header()
@@ -715,7 +786,7 @@ def download_smm():
 
     trend    = last_report.get("trend_analysis", "")
     followup = last_report.get("battle_plan_followup", "")
-    if trend and trend != "First report — no trend data yet.":
+    if trend and trend != "First report — no prior data available.":
         cur = section("Trend Analysis", cur)
         cur = body(trend, LEFT, cur, size=9, color=MUTED, max_w=W)
         cur -= 4
@@ -729,55 +800,50 @@ def download_smm():
 
     for item in last_report.get("kill_list", []):
         cur = chk(cur, 2.8*cm)
-
         reason      = item.get("reason", "")
         replacement = item.get("replacement", "")
         title       = item.get("post_title", "")
 
-        reason_lines      = simpleSplit(f"Analysis: {reason}", "Helvetica", 8, W - 20)
-        replacement_lines = simpleSplit(f"Recommendation: {replacement}", "Helvetica", 8, W - 20)
         title_lines       = simpleSplit(title, "Helvetica-Bold", 9, W - 20)
+        reason_lines      = simpleSplit(
+            f"Analysis: {reason}", "Helvetica", 8, W - 20)
+        replacement_lines = simpleSplit(
+            f"Recommendation: {replacement}", "Helvetica", 8, W - 20)
 
         needed_h = (
-            0.5*cm +
-            len(title_lines) * 9 * 1.6 +
-            len(reason_lines) * 8 * 1.6 +
-            len(replacement_lines) * 8 * 1.6 +
-            0.3*cm
+            0.5*cm
+            + len(title_lines)       * 9 * 1.6
+            + len(reason_lines)      * 8 * 1.6
+            + len(replacement_lines) * 8 * 1.6
+            + 0.4*cm
         )
-
         cy = cur - needed_h
         card(LEFT, cy, W, needed_h, border=CARD_BORDER)
 
         text_y = cy + needed_h - 0.5*cm
-
         sc(WHITE)
         c.setFont("Helvetica-Bold", 9)
         for line in title_lines:
             c.drawString(LEFT + 10, text_y, line)
             text_y -= 9 * 1.6
-
         text_y -= 4
         sc(MUTED)
         c.setFont("Helvetica", 8)
         for line in reason_lines:
             c.drawString(LEFT + 10, text_y, line)
             text_y -= 8 * 1.6
-
         text_y -= 4
         sc(BLUE)
         c.setFont("Helvetica", 8)
         for line in replacement_lines:
             c.drawString(LEFT + 10, text_y, line)
             text_y -= 8 * 1.6
-
         cur = cy - 0.4*cm
 
     cur -= 8
-    cur = chk(cur)
-    cur = section("Format Performance", cur)
-
-    fv = last_report.get("format_velocity", "")
+    cur  = chk(cur)
+    cur  = section("Format Performance", cur)
+    fv   = last_report.get("format_velocity", "")
     if fv:
         cur = body(fv, LEFT, cur, size=9, color=MUTED, max_w=W)
     cur -= 12
@@ -785,12 +851,11 @@ def download_smm():
     cur = chk(cur)
     cur = section("Engagement Depth", cur)
 
-    cf      = last_report.get("save_to_reach_client_friendly", "")
-    ratio   = last_report.get("save_to_reach_ratio", "N/A")
-    cf_lines    = simpleSplit(cf, "Helvetica", 8, W - 100) if cf else []
-    needed_h = max(1.2*cm, len(cf_lines) * 8 * 1.6 + 0.7*cm)
-
-    ratio_y = cur - needed_h
+    cf          = last_report.get("save_to_reach_client_friendly", "")
+    ratio       = last_report.get("save_to_reach_ratio", "N/A")
+    cf_lines    = simpleSplit(cf, "Helvetica", 8, W - 20) if cf else []
+    needed_h    = max(1.2*cm, len(cf_lines) * 8 * 1.6 + 0.7*cm)
+    ratio_y     = cur - needed_h
     card(LEFT, ratio_y, W, needed_h, border=CARD_BORDER)
 
     sc(ACCENT)
@@ -803,7 +868,6 @@ def download_smm():
     for line in cf_lines:
         c.drawString(LEFT + 10, text_y, line)
         text_y -= 8 * 1.6
-
     cur = ratio_y - 0.7*cm
 
     cur = chk(cur)
@@ -814,16 +878,18 @@ def download_smm():
         key=lambda x: x.get("impact_score", 0),
         reverse=True
     )
-    max_sv = max((p.get("impact_score", 1) for p in sorted_posts), default=1) or 1
+    max_sv = max(
+        (p.get("impact_score", 1) for p in sorted_posts), default=1
+    ) or 1
 
     hh = 0.5*cm
     hy = cur - hh
     card(LEFT, hy, W, hh, border=CARD_BORDER, radius=4)
     sc(MUTED)
     c.setFont("Helvetica", 7)
-    c.drawString(LEFT + 8, hy + 0.17*cm, "POST")
-    c.drawString(RIGHT - 5.5*cm, hy + 0.17*cm, "SCORE")
-    c.drawString(RIGHT - 3.5*cm, hy + 0.17*cm, "RATING")
+    c.drawString(LEFT + 8,         hy + 0.17*cm, "POST")
+    c.drawString(RIGHT - 5.5*cm,   hy + 0.17*cm, "SCORE")
+    c.drawString(RIGHT - 3.5*cm,   hy + 0.17*cm, "RATING")
     cur = hy - 0.15*cm
 
     for i, post in enumerate(sorted_posts):
@@ -867,12 +933,11 @@ def download_smm():
         cur = ry - 0.12*cm
 
     cur -= 12
-    cur = chk(cur)
-    cur = section("Strategic Recommendations", cur)
+    cur  = chk(cur)
+    cur  = section("Strategic Recommendations", cur)
 
     for i, action in enumerate(last_report.get("battle_plan", [])):
         cur = chk(cur, 1.8*cm)
-
         action_lines = simpleSplit(action, "Helvetica", 9, W - 45)
         needed_h     = max(1.1*cm, len(action_lines) * 9 * 1.6 + 0.4*cm)
         wcy          = cur - needed_h
@@ -888,12 +953,11 @@ def download_smm():
         for line in action_lines:
             c.drawString(LEFT + 30, ay, line)
             ay -= 9 * 1.6
-
         cur = wcy - 0.25*cm
 
     cur -= 8
-    cur = chk(cur)
-    cur = section("Overall Recommendations", cur)
+    cur  = chk(cur)
+    cur  = section("Overall Recommendations", cur)
 
     for rec in last_report.get("overall_recommendations", []):
         cur = chk(cur, 1.2*cm)
@@ -916,34 +980,11 @@ def download_smm():
     )
 
 
-@app.route("/fetch-instagram", methods=["POST"])
-@login_required
-def fetch_instagram():
-    username = request.json.get("username", "").strip()
-    if not username:
-        return jsonify({"error": "No username provided"}), 400
-    username = username.replace("@", "").replace(
-        "https://www.instagram.com/", ""
-    ).strip("/")
-    try:
-        posts_data = fetch_instagram_data(username)
-        if not posts_data:
-            return jsonify({"error": "No posts found or account is private"}), 404
-        return jsonify({
-            "success": True,
-            "posts_count": len(posts_data),
-            "formatted_data": format_for_reportly(posts_data),
-            "raw_data": posts_data
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
 @app.route("/history", methods=["GET"])
 @login_required
 def get_report_history():
-    user_id = session["user_id"]
-    history = get_history(user_id)
+    user_id   = session["user_id"]
+    history   = get_history(user_id)
     summaries = [
         {
             "index":               i,
