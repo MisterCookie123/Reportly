@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Panel</title>
+    <style>
+        body { background: #0a0a0a; color: white; font-family: sans-serif; display: flex; justify-content: center; padding: 60px 20px; }
+        .box { background: #111; border: 1px solid #222; border-radius: 12px; padding: 40px; width: 100%; max-width: 400px; }
+        h2 { margin-bottom: 24px; color: #00ffff; }
+        input { width: 100%; padding: 10px; margin-bottom: 16px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; color: white; font-size: 14px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: #00ffff; color: black; border: none; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; }
+        #msg { margin-top: 20px; padding: 12px; border-radius: 8px; display: none; text-align: center; }
+        .success { background: #14532d; color: #4ade80; display: block !important; }
+        .error { background: #450a0a; color: #f87171; display: block !important; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h2>Activate User</h2>
+        <input type="password" id="adminKey" placeholder="Admin Key" />
+        <input type="email" id="email" placeholder="Client Email" />
+        <input type="number" id="days" placeholder="Days (default 30)" value="30" />
+        <button onclick="activate()">Activate</button>
+        <div id="msg"></div>
+    </div>
+
+    <script>
+        async function activate() {
+            const adminKey = document.getElementById("adminKey").value;
+            const email    = document.getElementById("email").value;
+            const days     = parseInt(document.getElementById("days").value) || 30;
+            const msg      = document.getElementById("msg");
+
+            if (!adminKey || !email) {
+                msg.className = "error";
+                msg.innerText = "Please fill in all fields.";
+                return;
+            }
+
+            try {
+                const res  = await fetch("/admin/activate", {
+                    method:  "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body:    JSON.stringify({ admin_key: adminKey, email, days })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    msg.className = "success";
+                    msg.innerText = data.message;
+                } else {
+                    msg.className = "error";
+                    msg.innerText = data.error || "Something went wrong.";
+                }
+            } catch (e) {
+                msg.className = "error";
+                msg.innerText = "Request failed.";
+            }
+        }
+    </script>
+</body>
+</html>

@@ -7,22 +7,40 @@ async function checkTrialStatus() {
         const response = await fetch("/trial/status");
         const data     = await response.json();
         const banner   = document.getElementById("trial-banner");
+        const btn      = document.getElementById("generateBtn");
+        const input    = document.getElementById("dataInput");
         if (!banner) return;
 
         if (data.is_active) {
             banner.style.display = "none";
+            if (btn)   btn.disabled            = false;
+            if (input) input.disabled          = false;
+            if (input) input.placeholder       = "Paste your social media data here...";
         } else if (data.reports_left > 0) {
             banner.style.display = "flex";
             banner.className     = "trial-banner";
             banner.innerHTML     = `<span>${data.reports_left} free report${data.reports_left === 1 ? "" : "s"} remaining.</span>`;
+            if (btn)   btn.disabled   = false;
+            if (input) input.disabled = false;
         } else {
             banner.style.display = "flex";
             banner.className     = "trial-banner expired";
             banner.innerHTML     = `
                 <span>Your free trial has ended.</span>
-                <a href="mailto:your@email.com?subject=Reportly Upgrade" class="upgrade-link">
+                <a href="https://www.paypal.com/ncp/payment/QVNB3RELPLV3Y" target="_blank" class="upgrade-link">
                     Upgrade — $29/month →
                 </a>`;
+            if (btn) {
+                btn.disabled       = true;
+                btn.style.opacity  = "0.4";
+                btn.style.cursor   = "not-allowed";
+            }
+            if (input) {
+                input.disabled          = true;
+                input.value             = "";
+                input.placeholder       = "Upgrade to continue generating reports.";
+                input.style.opacity     = "0.4";
+            }
         }
     } catch (e) {
         console.error("Could not check trial status", e);
@@ -37,9 +55,9 @@ async function generateReport() {
         return;
     }
 
-    document.getElementById("loading").style.display        = "block";
-    document.getElementById("outputSection").style.display  = "none";
-    document.getElementById("generateBtn").disabled         = true;
+    document.getElementById("loading").style.display       = "block";
+    document.getElementById("outputSection").style.display = "none";
+    document.getElementById("generateBtn").disabled        = true;
 
     try {
         const response = await fetch("/generate", {
@@ -50,17 +68,31 @@ async function generateReport() {
 
         if (response.status === 402) {
             const result = await response.json();
-            document.getElementById("loading").style.display   = "none";
-            document.getElementById("generateBtn").disabled    = false;
+            document.getElementById("loading").style.display  = "none";
+            document.getElementById("generateBtn").disabled   = false;
             const banner = document.getElementById("trial-banner");
             if (banner) {
                 banner.style.display = "flex";
                 banner.className     = "trial-banner expired";
                 banner.innerHTML     = `
                     <span>${result.message}</span>
-                    <a href="mailto:your@email.com?subject=Reportly Upgrade" class="upgrade-link">
+                    <a href="https://www.paypal.com/ncp/payment/QVNB3RELPLV3Y" target="_blank" class="upgrade-link">
                         Upgrade — $29/month →
                     </a>`;
+            }
+            // Lock the UI immediately on 402
+            const btn   = document.getElementById("generateBtn");
+            const input = document.getElementById("dataInput");
+            if (btn) {
+                btn.disabled      = true;
+                btn.style.opacity = "0.4";
+                btn.style.cursor  = "not-allowed";
+            }
+            if (input) {
+                input.disabled        = true;
+                input.value           = "";
+                input.placeholder     = "Upgrade to continue generating reports.";
+                input.style.opacity   = "0.4";
             }
             return;
         }
@@ -77,7 +109,7 @@ async function generateReport() {
             return;
         }
 
-        const healthBadge   = document.getElementById("healthBadge");
+        const healthBadge     = document.getElementById("healthBadge");
         healthBadge.innerText = report.business_health;
         healthBadge.className = "health-badge " +
             report.business_health.replace(/ /g, "-").toLowerCase();
@@ -87,18 +119,18 @@ async function generateReport() {
         const insightsList = document.getElementById("keyInsights");
         insightsList.innerHTML = "";
         report.key_insights.forEach(insight => {
-            const li      = document.createElement("li");
-            li.innerText  = insight;
+            const li     = document.createElement("li");
+            li.innerText = insight;
             insightsList.appendChild(li);
         });
 
         const postsGrid = document.getElementById("postsGrid");
         postsGrid.innerHTML = "";
         report.posts.forEach(post => {
-            const card      = document.createElement("div");
-            card.className  = "post-card " +
+            const card     = document.createElement("div");
+            card.className = "post-card " +
                 post.efficiency_rating.replace(/ /g, "-").toLowerCase();
-            card.innerHTML  = `
+            card.innerHTML = `
                 <div class="post-header">
                     <h3>${post.post_title}</h3>
                     <span class="impact-score">${post.impact_score}</span>
@@ -145,9 +177,4 @@ function downloadPDF(type) {
 async function logout() {
     await fetch("/auth/logout", { method: "POST" });
     window.location.href = "/login";
-}
-
-async function logout() {
-    await fetch('/auth/logout', { method: 'POST' });
-    window.location.href = '/login';
 }

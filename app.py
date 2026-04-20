@@ -979,6 +979,10 @@ def download_smm():
         mimetype="application/pdf"
     )
 
+@app.route("/admin")
+def admin_page():
+    return render_template("admin.html")
+
 
 @app.route("/history", methods=["GET"])
 @login_required
